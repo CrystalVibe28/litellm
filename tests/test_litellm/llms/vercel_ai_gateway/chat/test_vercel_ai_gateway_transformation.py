@@ -2,8 +2,6 @@ import os
 import sys
 from unittest.mock import patch
 
-import pytest
-
 sys.path.insert(
     0, os.path.abspath("../../../../..")
 )  # Adds the parent directory to the system path
@@ -101,6 +99,55 @@ def test_vercel_ai_gateway_error_class():
     assert error_class.message == error_message
     assert error_class.status_code == status_code
     assert error_class.headers == headers
+
+
+def test_vercel_ai_gateway_reasoning_effort_mapping():
+    """Test that reasoning_effort is converted to extra_body.reasoning format"""
+    config = VercelAIGatewayConfig()
+
+    non_default_params = {"reasoning_effort": "high"}
+    optional_params = {}
+    model = "vercel_ai_gateway/openai/gpt-4o"
+
+    result = config.map_openai_params(
+        non_default_params, optional_params, model, drop_params=False
+    )
+
+    assert result["extra_body"]["reasoning"] == {"effort": "high", "enabled": True}
+    assert "reasoning_effort" not in result
+
+
+def test_vercel_ai_gateway_reasoning_effort_with_existing_extra_body():
+    """Test that reasoning_effort merges with existing extra_body instead of overwriting it"""
+    config = VercelAIGatewayConfig()
+
+    non_default_params = {
+        "reasoning_effort": "high",
+        "providerOptions": {"gateway": {"order": ["azure", "openai"]}},
+    }
+    optional_params = {}
+    model = "vercel_ai_gateway/openai/gpt-4o"
+
+    result = config.map_openai_params(
+        non_default_params, optional_params, model, drop_params=False
+    )
+
+    # Both keys must coexist in extra_body — neither should be silently dropped
+    assert result["extra_body"]["reasoning"] == {"effort": "high", "enabled": True}
+    assert result["extra_body"]["providerOptions"] == {
+        "gateway": {"order": ["azure", "openai"]}
+    }
+    assert "reasoning_effort" not in result
+
+
+def test_vercel_ai_gateway_reasoning_effort_in_supported_params():
+    """Test that reasoning_effort is included in supported params"""
+    config = VercelAIGatewayConfig()
+    supported_params = config.get_supported_openai_params(
+        "vercel_ai_gateway/openai/gpt-4o"
+    )
+
+    assert "reasoning_effort" in supported_params
 
 
 def test_vercel_ai_gateway_exception_inheritance():
