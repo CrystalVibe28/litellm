@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import sys
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -32,6 +33,22 @@ async def test_add_update(spend_queue):
 
     # Verify update was added by checking queue size
     assert spend_queue.update_queue.qsize() == 1
+
+
+@pytest.mark.asyncio
+async def test_add_update_schedules_aggregation_check(spend_queue):
+    update: SpendUpdateQueueItem = {
+        "entity_type": Litellm_EntityType.USER,
+        "entity_id": "user123",
+        "response_cost": 0.5,
+    }
+
+    with patch.object(
+        spend_queue, "_schedule_queue_aggregation_if_needed"
+    ) as mock_schedule:
+        await spend_queue.add_update(update)
+
+    mock_schedule.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -168,6 +185,8 @@ async def test_queue_max_size_triggers_aggregation(monkeypatch, spend_queue):
         }
         await spend_queue.add_update(update)
 
+    await spend_queue._wait_for_pending_aggregation()
+
     # Queue should have been aggregated, resulting in a single entry
     assert spend_queue.update_queue.qsize() == 1
 
@@ -176,6 +195,75 @@ async def test_queue_max_size_triggers_aggregation(monkeypatch, spend_queue):
         await spend_queue.flush_and_get_aggregated_db_spend_update_transactions()
     )
     assert aggregated["user_list_transactions"]["user123"] == 6.0
+
+
+@pytest.mark.asyncio
+async def test_flush_preserves_drained_items_when_aggregator_raises(
+    monkeypatch, spend_queue
+):
+    """
+    If the aggregation task raises, the flush caller has already drained items
+    into its local list. Those items must still surface in the aggregated DB
+    transactions - they cannot be silently dropped on the floor.
+    """
+
+    async def failing_aggregator():
+        raise RuntimeError("aggregator boom")
+
+    update: SpendUpdateQueueItem = {
+        "entity_type": Litellm_EntityType.USER,
+        "entity_id": "user-survives-aggregator-boom",
+        "response_cost": 2.5,
+    }
+    await spend_queue.add_update(update)
+    spend_queue._aggregation_task = asyncio.create_task(failing_aggregator())
+    # Let the failing aggregator surface its exception before flush.
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    aggregated = (
+        await spend_queue.flush_and_get_aggregated_db_spend_update_transactions()
+    )
+
+    assert aggregated["user_list_transactions"]["user-survives-aggregator-boom"] == 2.5
+
+
+@pytest.mark.asyncio
+async def test_flush_drains_before_waiting_on_aggregation(monkeypatch, spend_queue):
+    """
+    The flush must drain the queue BEFORE awaiting the aggregation task.
+
+    If it waited first, an aggregator wedged on a terminal `put` into a still-full
+    queue would deadlock the flush. The two-phase drain-wait-drain pattern frees
+    the slot the aggregator needs.
+    """
+    order: list[str] = []
+
+    original_flush = spend_queue.flush_all_updates_from_in_memory_queue
+    original_wait = spend_queue._wait_for_pending_aggregation
+
+    async def trace_flush():
+        order.append("flush")
+        return await original_flush()
+
+    async def trace_wait():
+        order.append("wait")
+        await original_wait()
+
+    monkeypatch.setattr(
+        spend_queue, "flush_all_updates_from_in_memory_queue", trace_flush
+    )
+    monkeypatch.setattr(spend_queue, "_wait_for_pending_aggregation", trace_wait)
+
+    update: SpendUpdateQueueItem = {
+        "entity_type": Litellm_EntityType.USER,
+        "entity_id": "user123",
+        "response_cost": 1.0,
+    }
+    await spend_queue.add_update(update)
+    await spend_queue.flush_and_get_aggregated_db_spend_update_transactions()
+
+    assert order == ["flush", "wait", "flush"]
 
 
 @pytest.mark.asyncio
@@ -274,8 +362,9 @@ async def test_queue_size_reduction_with_large_volume(monkeypatch, spend_queue):
             }
         )
 
-    # At this point, aggregation should have happened at least once
-    # Queue size should be much less than 20
+    # Aggregation now runs as a background task scheduled from add_update.
+    # Wait for it to drain before asserting on compacted queue size.
+    await spend_queue._wait_for_pending_aggregation()
     assert spend_queue.update_queue.qsize() <= 10
 
     for i in range(300):
@@ -287,7 +376,7 @@ async def test_queue_size_reduction_with_large_volume(monkeypatch, spend_queue):
             }
         )
 
-    # Queue should have at most 2 items after all this activity
+    await spend_queue._wait_for_pending_aggregation()
     assert spend_queue.update_queue.qsize() <= 10
 
     # Verify total costs are correct

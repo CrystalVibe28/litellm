@@ -5204,6 +5204,15 @@ async def update_daily_tag_spend(
                 n_retry_times=n_retry_times,
                 proxy_logging_obj=proxy_logging_obj,
             )
+    except asyncio.CancelledError:
+        # Task was cancelled - typically because the scheduler is shutting
+        # down (AsyncIOExecutor.shutdown cancels every pending future). Log
+        # at debug and return normally so APScheduler does not surface this
+        # benign teardown event as a job error.
+        verbose_proxy_logger.debug(
+            "update_daily_tag_spend cancelled (likely scheduler shutdown)"
+        )
+        return
     except Exception as e:
         # NOTE: keep this as a plain ``error`` (no traceback) to match the
         # historical behavior of this site. ``spend_log_error`` would attach

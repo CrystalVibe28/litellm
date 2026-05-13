@@ -94,3 +94,145 @@ async def test_proxy_gunicorn_startup_config_dict():
 
 
 # test_proxy_gunicorn_startup()
+
+
+@pytest.mark.asyncio
+async def test_proxy_shutdown_stops_scheduler_before_prisma_disconnect(monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+
+    import litellm.proxy.proxy_server as proxy_server
+
+    events = []
+
+    class MockScheduler:
+        state = 1  # STATE_RUNNING
+
+        def pause(self):
+            pass
+
+        def shutdown(self, wait=True):
+            # wait=False is expected: we drain in-flight jobs ourselves before
+            # this call, so APScheduler does not need to (and cannot, for the
+            # AsyncIOExecutor) wait for pending coroutines.
+            events.append("scheduler_shutdown")
+
+    class MockPrismaClient:
+        async def disconnect(self):
+            events.append("prisma_disconnect")
+
+    mock_jwt_handler = MagicMock()
+    mock_jwt_handler.close = AsyncMock()
+
+    monkeypatch.setattr(proxy_server, "scheduler", MockScheduler())
+    monkeypatch.setattr(proxy_server, "spend_logs_queue_monitor_task", None)
+    monkeypatch.setattr(proxy_server, "prisma_client", MockPrismaClient())
+    monkeypatch.setattr(proxy_server, "jwt_handler", mock_jwt_handler)
+    monkeypatch.setattr(proxy_server, "db_writer_client", None)
+    monkeypatch.setattr(litellm, "cache", None)
+
+    await proxy_server.proxy_shutdown_event()
+
+    assert events == ["scheduler_shutdown", "prisma_disconnect"]
+    assert proxy_server.scheduler is None
+    mock_jwt_handler.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_proxy_shutdown_runs_scheduler_shutdown_off_event_loop(monkeypatch):
+    """
+    APScheduler.shutdown(wait=True) is synchronous. It must be offloaded to a
+    thread executor so the asyncio event loop stays responsive during teardown.
+    """
+    import threading
+    from unittest.mock import AsyncMock, MagicMock
+
+    import litellm.proxy.proxy_server as proxy_server
+
+    main_thread_id = threading.get_ident()
+    scheduler_thread_ids: list[int] = []
+
+    class MockScheduler:
+        def shutdown(self, wait=True):
+            scheduler_thread_ids.append(threading.get_ident())
+
+    mock_jwt_handler = MagicMock()
+    mock_jwt_handler.close = AsyncMock()
+
+    monkeypatch.setattr(proxy_server, "scheduler", MockScheduler())
+    monkeypatch.setattr(proxy_server, "spend_logs_queue_monitor_task", None)
+    monkeypatch.setattr(proxy_server, "prisma_client", None)
+    monkeypatch.setattr(proxy_server, "jwt_handler", mock_jwt_handler)
+    monkeypatch.setattr(proxy_server, "db_writer_client", None)
+    monkeypatch.setattr(litellm, "cache", None)
+
+    await proxy_server.proxy_shutdown_event()
+
+    assert len(scheduler_thread_ids) == 1
+    assert scheduler_thread_ids[0] != main_thread_id
+
+
+@pytest.mark.asyncio
+async def test_proxy_shutdown_drains_inflight_scheduler_jobs(monkeypatch):
+    """
+    APScheduler's AsyncIOExecutor.shutdown cancels every pending future, which
+    would surface CancelledError out of in-flight DB-using jobs (e.g.
+    update_daily_tag_spend reading from Prisma). Our shutdown must:
+      1. pause() the scheduler so no new jobs start;
+      2. await pending coroutine job tasks (with timeout); and
+      3. only then shut down (with wait=False since the drain already happened).
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    import litellm.proxy.proxy_server as proxy_server
+
+    events: list[str] = []
+    job_started = asyncio.Event()
+    job_can_finish = asyncio.Event()
+
+    async def fake_job():
+        job_started.set()
+        await job_can_finish.wait()
+        events.append("job_completed")
+
+    job_task = asyncio.create_task(fake_job())
+    await job_started.wait()
+
+    class MockExecutor:
+        def __init__(self, tasks):
+            self._pending_futures = tasks
+
+    class MockScheduler:
+        state = 1  # STATE_RUNNING
+
+        def __init__(self, executor_tasks):
+            self._executors = {"default": MockExecutor(executor_tasks)}
+
+        def pause(self):
+            events.append("pause")
+
+        def shutdown(self, wait=True):
+            events.append(f"shutdown(wait={wait})")
+
+    async def release_job_soon():
+        await asyncio.sleep(0)
+        job_can_finish.set()
+
+    asyncio.create_task(release_job_soon())
+
+    mock_jwt_handler = MagicMock()
+    mock_jwt_handler.close = AsyncMock()
+
+    monkeypatch.setattr(proxy_server, "scheduler", MockScheduler([job_task]))
+    monkeypatch.setattr(proxy_server, "spend_logs_queue_monitor_task", None)
+    monkeypatch.setattr(proxy_server, "prisma_client", None)
+    monkeypatch.setattr(proxy_server, "jwt_handler", mock_jwt_handler)
+    monkeypatch.setattr(proxy_server, "db_writer_client", None)
+    monkeypatch.setattr(litellm, "cache", None)
+
+    await proxy_server.proxy_shutdown_event()
+
+    # pause must happen before job completion, and shutdown(wait=False) must
+    # happen after - i.e. we drained the in-flight job instead of cancelling.
+    assert events.index("pause") < events.index("job_completed")
+    assert events.index("job_completed") < events.index("shutdown(wait=False)")
+    assert not job_task.cancelled()

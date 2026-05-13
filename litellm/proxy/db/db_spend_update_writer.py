@@ -407,71 +407,269 @@ class DBSpendUpdateWriter:
             )
 
         try:
-            await self.add_spend_log_transaction_to_daily_user_transaction(
-                payload=payload_copy,
-                prisma_client=prisma_client,
-            )
-        except Exception:
-            verbose_proxy_logger.debug(
-                "_batch_database_updates: add_spend_log_transaction_to_daily_user_transaction failed: %s",
-                traceback.format_exc(),
-            )
-
-        try:
-            await self.add_spend_log_transaction_to_daily_end_user_transaction(
-                payload=payload_copy,
-                prisma_client=prisma_client,
-            )
-        except Exception:
-            verbose_proxy_logger.debug(
-                "_batch_database_updates: add_spend_log_transaction_to_daily_end_user_transaction failed: %s",
-                traceback.format_exc(),
-            )
-
-        try:
-            await self.add_spend_log_transaction_to_daily_agent_transaction(
-                payload=payload_copy,
-                prisma_client=prisma_client,
-            )
-        except Exception:
-            verbose_proxy_logger.debug(
-                "_batch_database_updates: add_spend_log_transaction_to_daily_agent_transaction failed: %s",
-                traceback.format_exc(),
-            )
-
-        try:
-            await self.add_spend_log_transaction_to_daily_team_transaction(
-                payload=payload_copy,
-                prisma_client=prisma_client,
-            )
-        except Exception:
-            verbose_proxy_logger.debug(
-                "_batch_database_updates: add_spend_log_transaction_to_daily_team_transaction failed: %s",
-                traceback.format_exc(),
-            )
-
-        try:
-            await self.add_spend_log_transaction_to_daily_org_transaction(
+            await self._enqueue_daily_spend_updates(
                 payload=payload_copy,
                 org_id=org_id,
                 prisma_client=prisma_client,
             )
         except Exception:
             verbose_proxy_logger.debug(
-                "_batch_database_updates: add_spend_log_transaction_to_daily_org_transaction failed: %s",
+                "_batch_database_updates: _enqueue_daily_spend_updates failed: %s",
                 traceback.format_exc(),
             )
 
-        try:
-            await self.add_spend_log_transaction_to_daily_tag_transaction(
-                payload=payload_copy,
-                prisma_client=prisma_client,
-            )
-        except Exception:
+    async def _enqueue_daily_spend_updates(
+        self,
+        payload: SpendLogsPayload,
+        org_id: Optional[str],
+        prisma_client: Optional[PrismaClient],
+    ) -> None:
+        """
+        Enqueue all daily spend rows for one request after computing the shared
+        daily payload once. This avoids repeated JSON parsing and request-status
+        resolution on the logging hot path.
+        """
+        if prisma_client is None:
             verbose_proxy_logger.debug(
-                "_batch_database_updates: add_spend_log_transaction_to_daily_tag_transaction failed: %s",
-                traceback.format_exc(),
+                "prisma_client is None. Skipping writing spend logs to db."
             )
+            return
+
+        base_daily_transaction = self._get_base_daily_spend_transaction(
+            payload=payload,
+            prisma_client=prisma_client,
+        )
+        if base_daily_transaction is None:
+            return
+
+        endpoint_str = base_daily_transaction.get("endpoint") or ""
+
+        # Each entity block is isolated in its own try/except so a failure on
+        # one (e.g. unexpected payload shape, transient CancelledError on the
+        # blocking put) does not silently drop the remaining entity rows for
+        # this request. Matches the prior per-entity fault-isolation behavior.
+        user_id = payload.get("user")
+        if user_id is not None and user_id != "":
+            try:
+                daily_transaction_key = f"{user_id}_{base_daily_transaction['date']}_{payload['api_key']}_{payload.get('model')}_{payload.get('custom_llm_provider')}_{endpoint_str}"
+                daily_user_transaction = DailyUserSpendTransaction(
+                    user_id=user_id, **base_daily_transaction
+                )
+                await self.daily_spend_update_queue.add_update(
+                    update={daily_transaction_key: daily_user_transaction}
+                )
+            except Exception:
+                verbose_proxy_logger.debug(
+                    "_enqueue_daily_spend_updates: user daily row failed: %s",
+                    traceback.format_exc(),
+                )
+
+        team_id = payload.get("team_id")
+        if team_id is not None and team_id != "":
+            try:
+                daily_transaction_key = f"{team_id}_{base_daily_transaction['date']}_{payload['api_key']}_{payload.get('model')}_{payload.get('custom_llm_provider')}_{endpoint_str}"
+                daily_team_transaction = DailyTeamSpendTransaction(
+                    team_id=team_id, **base_daily_transaction
+                )
+                await self.daily_team_spend_update_queue.add_update(
+                    update={daily_transaction_key: daily_team_transaction}
+                )
+            except Exception:
+                verbose_proxy_logger.debug(
+                    "_enqueue_daily_spend_updates: team daily row failed: %s",
+                    traceback.format_exc(),
+                )
+
+        if org_id is not None and org_id != "":
+            try:
+                daily_transaction_key = f"{org_id}_{base_daily_transaction['date']}_{payload['api_key']}_{payload.get('model')}_{payload.get('custom_llm_provider')}_{endpoint_str}"
+                daily_org_transaction = DailyOrganizationSpendTransaction(
+                    organization_id=org_id, **base_daily_transaction
+                )
+                await self.daily_org_spend_update_queue.add_update(
+                    update={daily_transaction_key: daily_org_transaction}
+                )
+            except Exception:
+                verbose_proxy_logger.debug(
+                    "_enqueue_daily_spend_updates: organization daily row failed: %s",
+                    traceback.format_exc(),
+                )
+
+        end_user_id = payload.get("end_user")
+        if end_user_id is not None and end_user_id != "":
+            try:
+                daily_transaction_key = f"{end_user_id}_{base_daily_transaction['date']}_{payload['api_key']}_{payload.get('model')}_{payload.get('custom_llm_provider')}_{endpoint_str}"
+                daily_end_user_transaction = DailyEndUserSpendTransaction(
+                    end_user_id=end_user_id, **base_daily_transaction
+                )
+                await self.daily_end_user_spend_update_queue.add_update(
+                    update={daily_transaction_key: daily_end_user_transaction}
+                )
+            except Exception:
+                verbose_proxy_logger.debug(
+                    "_enqueue_daily_spend_updates: end_user daily row failed: %s",
+                    traceback.format_exc(),
+                )
+
+        agent_id = payload.get("agent_id")
+        if agent_id is not None and agent_id != "":
+            try:
+                daily_transaction_key = f"{agent_id}_{base_daily_transaction['date']}_{payload['api_key']}_{payload.get('model')}_{payload.get('custom_llm_provider')}_{endpoint_str}"
+                daily_agent_transaction = DailyAgentSpendTransaction(
+                    agent_id=agent_id, **base_daily_transaction
+                )
+                await self.daily_agent_spend_update_queue.add_update(
+                    update={daily_transaction_key: daily_agent_transaction}
+                )
+            except Exception:
+                verbose_proxy_logger.debug(
+                    "_enqueue_daily_spend_updates: agent daily row failed: %s",
+                    traceback.format_exc(),
+                )
+
+        await self._enqueue_daily_tag_rows(
+            payload=payload,
+            base_daily_transaction=base_daily_transaction,
+            endpoint_str=endpoint_str,
+        )
+
+    async def _enqueue_daily_tag_rows(
+        self,
+        *,
+        payload: SpendLogsPayload,
+        base_daily_transaction: BaseDailySpendTransaction,
+        endpoint_str: str,
+    ) -> None:
+        """
+        Enqueue one daily tag-spend row per request_tag. Failures on one tag
+        (or on JSON parsing of the tag list) must not block the other tags.
+        """
+        request_tags = payload.get("request_tags")
+        if request_tags is None:
+            return
+        if isinstance(request_tags, str):
+            try:
+                request_tags = json.loads(request_tags)
+            except (json.JSONDecodeError, TypeError):
+                verbose_proxy_logger.warning(
+                    "Skipping daily tag spend update - request_tags is not valid JSON: %s",
+                    request_tags,
+                )
+                return
+        if not isinstance(request_tags, list):
+            verbose_proxy_logger.warning(
+                "Skipping daily tag spend update - invalid request_tags type %s: %s",
+                type(request_tags).__name__,
+                request_tags,
+            )
+            return
+
+        for tag in request_tags:
+            try:
+                daily_transaction_key = f"{tag}_{base_daily_transaction['date']}_{payload['api_key']}_{payload.get('model')}_{payload.get('custom_llm_provider')}_{endpoint_str}"
+                daily_tag_transaction = DailyTagSpendTransaction(
+                    tag=tag,
+                    **base_daily_transaction,
+                    request_id=payload.get("request_id"),
+                )
+                await self.daily_tag_spend_update_queue.add_update(
+                    update={daily_transaction_key: daily_tag_transaction}
+                )
+            except Exception:
+                verbose_proxy_logger.debug(
+                    "_enqueue_daily_spend_updates: tag %s daily row failed: %s",
+                    tag,
+                    traceback.format_exc(),
+                )
+
+    @staticmethod
+    def _extract_usage_object_from_payload(
+        payload: Union[dict, SpendLogsPayload],
+    ) -> dict:
+        """
+        Defensive read of `metadata.usage_object`. Returns {} for any payload
+        shape we can't parse - missing key, None, non-string, invalid JSON, or
+        metadata that isn't a JSON object - so a malformed payload can't drop
+        all daily spend writes for the request.
+        """
+        metadata_raw = payload.get("metadata")
+        if isinstance(metadata_raw, str) and metadata_raw:
+            try:
+                metadata = json.loads(metadata_raw)
+            except (json.JSONDecodeError, TypeError):
+                return {}
+        elif isinstance(metadata_raw, dict):
+            metadata = metadata_raw
+        else:
+            return {}
+        if not isinstance(metadata, dict):
+            return {}
+        usage_obj = metadata.get("usage_object")
+        return usage_obj if isinstance(usage_obj, dict) else {}
+
+    def _get_base_daily_spend_transaction(
+        self,
+        payload: Union[dict, SpendLogsPayload],
+        prisma_client: PrismaClient,
+    ) -> Optional[BaseDailySpendTransaction]:
+        common_expected_keys = ["startTime", "api_key"]
+        if not all(key in payload for key in common_expected_keys):
+            verbose_proxy_logger.debug(
+                f"Missing expected keys: {common_expected_keys}, in payload, skipping from daily_user_spend_transactions"
+            )
+            return None
+
+        any_expected_keys = ["model", "mcp_namespaced_tool_name"]
+        if not any(key in payload for key in any_expected_keys):
+            verbose_proxy_logger.debug(
+                f"Missing any expected keys: {any_expected_keys}, in payload, skipping from daily_user_spend_transactions"
+            )
+            return None
+        if "mcp_namespaced_tool_name" not in payload and (
+            "custom_llm_provider" not in payload or "model_group" not in payload
+        ):
+            verbose_proxy_logger.debug(
+                "Missing custom_llm_provider or model_group in payload, skipping from daily_user_spend_transactions"
+            )
+            return None
+
+        request_status = prisma_client.get_request_status(payload)
+        verbose_proxy_logger.debug(f"Logged request status: {request_status}")
+        usage_obj = self._extract_usage_object_from_payload(payload)
+        if isinstance(payload["startTime"], datetime):
+            start_time = payload["startTime"].isoformat()
+            date = start_time.split("T")[0]
+        elif isinstance(payload["startTime"], str):
+            date = payload["startTime"].split("T")[0]
+        else:
+            verbose_proxy_logger.debug(
+                f"Invalid start time: {payload['startTime']}, skipping from daily_user_spend_transactions"
+            )
+            return None
+
+        call_type = payload.get("call_type", None)
+        endpoint = None
+        if call_type:
+            endpoint = ROUTE_ENDPOINT_MAPPING.get(call_type, None)
+
+        return BaseDailySpendTransaction(
+            date=date,
+            api_key=payload["api_key"],
+            model=payload.get("model", None),
+            model_group=payload.get("model_group", None),
+            mcp_namespaced_tool_name=payload.get("mcp_namespaced_tool_name", None),
+            custom_llm_provider=payload.get("custom_llm_provider", None),
+            endpoint=endpoint,
+            prompt_tokens=payload["prompt_tokens"],
+            completion_tokens=payload["completion_tokens"],
+            spend=payload["spend"],
+            api_requests=1,
+            successful_requests=1 if request_status == "success" else 0,
+            failed_requests=1 if request_status != "success" else 0,
+            cache_read_input_tokens=usage_obj.get("cache_read_input_tokens", 0) or 0,
+            cache_creation_input_tokens=usage_obj.get("cache_creation_input_tokens", 0)
+            or 0,
+        )
 
     async def _update_key_db(
         self,

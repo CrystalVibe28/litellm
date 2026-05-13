@@ -652,9 +652,92 @@ def cleanup_router_config_variables():
     prisma_client = None
 
 
+SCHEDULER_JOB_DRAIN_TIMEOUT_SECONDS = 30.0
+
+
+def _collect_pending_scheduler_job_tasks(
+    scheduler_obj: Any,
+) -> List[asyncio.Task]:
+    """
+    Collect in-flight job tasks from APScheduler's AsyncIOExecutor.
+
+    APScheduler exposes pending coroutine jobs via the per-executor private
+    ``_pending_futures`` set. We touch that internal because the public API
+    has no equivalent and APScheduler's own ``shutdown(wait=True)`` simply
+    cancels every pending future for AsyncIOExecutor (it cannot await them
+    without becoming a coroutine).
+    """
+    tasks: List[asyncio.Task] = []
+    executors = getattr(scheduler_obj, "_executors", None) or {}
+    for executor in executors.values():
+        pending_futures = getattr(executor, "_pending_futures", None) or ()
+        for future in pending_futures:
+            if isinstance(future, asyncio.Task) and not future.done():
+                tasks.append(future)
+    return tasks
+
+
+async def _shutdown_scheduled_background_jobs() -> None:
+    global scheduler, spend_logs_queue_monitor_task
+    if spend_logs_queue_monitor_task is not None:
+        spend_logs_queue_monitor_task.cancel()
+        try:
+            await spend_logs_queue_monitor_task
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            verbose_proxy_logger.error(
+                f"Error stopping spend logs queue monitor task: {e}"
+            )
+        spend_logs_queue_monitor_task = None
+
+    if scheduler is not None:
+        try:
+            # Stop scheduling new runs before we touch the executor. After
+            # pause(), in-flight job tasks keep running but APScheduler will
+            # not start new ones.
+            if getattr(scheduler, "state", None) == 1:  # STATE_RUNNING
+                scheduler.pause()
+
+            # AsyncIOExecutor.shutdown(wait) ignores wait and cancels every
+            # pending coroutine task. If we let that happen while a job is
+            # mid-Prisma-call, the read raises CancelledError and APScheduler
+            # logs the job as having raised an exception. Drain in-flight job
+            # tasks first so they can finish cleanly.
+            pending_job_tasks = _collect_pending_scheduler_job_tasks(scheduler)
+            if pending_job_tasks:
+                verbose_proxy_logger.info(
+                    "Waiting up to %.0fs for %d in-flight APScheduler job(s) to finish",
+                    SCHEDULER_JOB_DRAIN_TIMEOUT_SECONDS,
+                    len(pending_job_tasks),
+                )
+                _, not_done = await asyncio.wait(
+                    pending_job_tasks,
+                    timeout=SCHEDULER_JOB_DRAIN_TIMEOUT_SECONDS,
+                )
+                if not_done:
+                    verbose_proxy_logger.warning(
+                        "%d APScheduler job(s) did not finish within %.0fs; "
+                        "they will be cancelled during shutdown.",
+                        len(not_done),
+                        SCHEDULER_JOB_DRAIN_TIMEOUT_SECONDS,
+                    )
+
+            # APScheduler.shutdown is synchronous. Offload to the default
+            # thread executor so the asyncio event loop stays responsive.
+            # wait=False because we already drained pending job tasks above.
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, lambda: scheduler.shutdown(wait=False))
+            verbose_proxy_logger.info("APScheduler shut down")
+        except Exception as e:
+            verbose_proxy_logger.error(f"Error shutting down APScheduler: {e}")
+        scheduler = None
+
+
 async def proxy_shutdown_event():
     global prisma_client, master_key, user_custom_auth, user_custom_key_generate, user_custom_key_update
     verbose_proxy_logger.info("Shutting down LiteLLM Proxy Server")
+    await _shutdown_scheduled_background_jobs()
     if prisma_client:
         verbose_proxy_logger.debug("Disconnecting from Prisma")
         await prisma_client.disconnect()
@@ -1781,6 +1864,7 @@ celery_fn = None  # Redis Queue for handling requests
 
 # Global variables for model cost map reload scheduling
 scheduler = None
+spend_logs_queue_monitor_task: Optional[asyncio.Task] = None
 last_model_cost_map_reload = None
 
 # Global variable for anthropic beta headers reload scheduling
@@ -6918,7 +7002,7 @@ class ProxyStartupEvent:
         proxy_logging_obj: ProxyLogging,
     ):
         """Initializes scheduled background jobs"""
-        global store_model_in_db, scheduler
+        global store_model_in_db, scheduler, spend_logs_queue_monitor_task
 
         # MEMORY LEAK FIX: Configure scheduler with optimized settings
         # Memray analysis showed APScheduler's normalize() and _apply_jitter() causing
@@ -7016,13 +7100,17 @@ class ProxyStartupEvent:
             from litellm.proxy.utils import _monitor_spend_logs_queue
 
             # Start background task to monitor spend logs queue size
-            asyncio.create_task(
-                _monitor_spend_logs_queue(
-                    prisma_client=prisma_client,
-                    db_writer_client=db_writer_client,
-                    proxy_logging_obj=proxy_logging_obj,
+            if (
+                spend_logs_queue_monitor_task is None
+                or spend_logs_queue_monitor_task.done()
+            ):
+                spend_logs_queue_monitor_task = asyncio.create_task(
+                    _monitor_spend_logs_queue(
+                        prisma_client=prisma_client,
+                        db_writer_client=db_writer_client,
+                        proxy_logging_obj=proxy_logging_obj,
+                    )
                 )
-            )
 
         ### ADD NEW MODELS ###
         store_model_in_db = (
