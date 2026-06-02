@@ -41,6 +41,7 @@ class UserAPIKeyAuthExceptionHandler:
         route: str,
         parent_otel_span: Optional[Span],
         api_key: str,
+        user_api_key_auth_obj: Optional[UserAPIKeyAuth] = None,
     ) -> UserAPIKeyAuth:
         """
         Handles Connection Errors when reading a Virtual Key from LiteLLM DB
@@ -101,11 +102,15 @@ class UserAPIKeyAuthExceptionHandler:
             )
 
             # Log this exception to OTEL, Datadog etc
-            user_api_key_dict = UserAPIKeyAuth(
-                parent_otel_span=parent_otel_span,
-                api_key=api_key,
-                request_route=route,
-            )
+            if user_api_key_auth_obj is not None:
+                user_api_key_dict = user_api_key_auth_obj
+                user_api_key_dict.request_route = route
+            else:
+                user_api_key_dict = UserAPIKeyAuth(
+                    parent_otel_span=parent_otel_span,
+                    api_key=api_key,
+                    request_route=route,
+                )
             # Allow callbacks to transform the error response
             transformed_exception = await proxy_logging_obj.post_call_failure_hook(
                 request_data=request_data,

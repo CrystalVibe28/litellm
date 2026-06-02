@@ -2693,7 +2693,10 @@ async def test_centralized_common_checks_blocks_admin_llm_route_when_mapped_inte
     request = Request(
         scope={
             "type": "http",
-            "headers": [(b"x-openwebui-user-id", b"openwebui-user-a")],
+            "headers": [
+                (b"x-openwebui-user-id", b"openwebui-user-a"),
+                (b"x-openwebui-user-name", b"openwebui-user-name"),
+            ],
             "method": "POST",
         }
     )
@@ -2705,7 +2708,11 @@ async def test_centralized_common_checks_blocks_admin_llm_route_when_mapped_inte
             {
                 "header_name": "X-OpenWebUI-User-Id",
                 "litellm_user_role": "internal_user",
-            }
+            },
+            {
+                "header_name": "X-OpenWebUI-User-Name",
+                "litellm_user_role": "customer",
+            },
         ]
     }
     originals = {a: getattr(_proxy_server_mod, a, None) for a in attrs}
@@ -2738,10 +2745,76 @@ async def test_centralized_common_checks_blocks_admin_llm_route_when_mapped_inte
                 )
 
             assert token.user_id == "openwebui-user-a"
+            assert token.end_user_id == "openwebui-user-name"
             assert "openwebui-user-a" in str(exc_info.value)
     finally:
         for k, v in originals.items():
             setattr(_proxy_server_mod, k, v)
+
+
+@pytest.mark.asyncio
+async def test_user_api_key_auth_passes_resolved_token_to_auth_error_handler():
+    from fastapi import Request
+    from starlette.datastructures import URL
+
+    token = UserAPIKeyAuth(
+        api_key="hashed-key",
+        user_id="openwebui-user-a",
+        end_user_id="openwebui-user-name",
+    )
+    request = Request(
+        scope={
+            "type": "http",
+            "headers": [],
+            "method": "POST",
+        }
+    )
+    request._url = URL(url="/chat/completions")
+    budget_error = litellm.BudgetExceededError(
+        current_cost=11,
+        max_budget=10,
+        message="ExceededBudget: User=openwebui-user-a over budget.",
+    )
+
+    with (
+        patch(
+            "litellm.proxy.auth.user_api_key_auth._read_request_body",
+            new_callable=AsyncMock,
+            return_value={"model": "gpt-4o"},
+        ),
+        patch(
+            "litellm.proxy.auth.user_api_key_auth._user_api_key_auth_builder",
+            new_callable=AsyncMock,
+            return_value=token,
+        ),
+        patch(
+            "litellm.proxy.auth.user_api_key_auth.RouteChecks.should_call_route",
+        ),
+        patch(
+            "litellm.proxy.auth.user_api_key_auth._run_centralized_common_checks",
+            new_callable=AsyncMock,
+            side_effect=budget_error,
+        ),
+        patch(
+            "litellm.proxy.auth.user_api_key_auth.UserAPIKeyAuthExceptionHandler._handle_authentication_error",
+            new_callable=AsyncMock,
+            return_value=UserAPIKeyAuth(api_key="handled"),
+        ) as mock_error_handler,
+    ):
+        await user_api_key_auth(
+            request=request,
+            api_key="Bearer sk-raw",
+            azure_api_key_header="",
+            anthropic_api_key_header=None,
+            google_ai_studio_api_key_header=None,
+            azure_apim_header=None,
+            custom_litellm_key_header=None,
+        )
+
+        mock_error_handler.assert_awaited_once()
+        assert mock_error_handler.call_args.kwargs["user_api_key_auth_obj"] is token
+        assert token.user_id == "openwebui-user-a"
+        assert token.end_user_id == "openwebui-user-name"
 
 
 @pytest.mark.asyncio
@@ -3017,9 +3090,9 @@ async def test_centralized_common_checks_propagates_end_user_budget_error():
 
 @pytest.mark.asyncio
 async def test_centralized_common_checks_reserves_request_end_user_budget():
-    """Regression: reservation runs before user_api_key_auth() copies the
-    request end-user onto the token, so centralized checks must pass the
-    locally extracted end_user_id/end_user_object into reservation."""
+    """Regression: centralized checks must keep the locally extracted
+    end_user_id on the token so both reservation and auth-failure logging
+    use the same end-user context."""
     import litellm.proxy.proxy_server as _proxy_server_mod
     from fastapi import Request
     from starlette.datastructures import URL
@@ -3074,7 +3147,7 @@ async def test_centralized_common_checks_reserves_request_end_user_budget():
         for k, v in originals.items():
             setattr(_proxy_server_mod, k, v)
 
-    assert token.end_user_id is None
+    assert token.end_user_id == "alice"
     assert token.budget_reservation is not None
     assert token.budget_reservation["entries"] == [
         {

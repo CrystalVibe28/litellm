@@ -1906,6 +1906,8 @@ async def _run_centralized_common_checks(  # noqa: PLR0915
             proxy_logging_obj=proxy_logging_obj,
             route=route,
         )
+    if end_user_id is not None:
+        user_api_key_auth_obj.end_user_id = end_user_id
 
     fetch_coros = []
     if user_api_key_auth_obj.team_id is not None:
@@ -2274,6 +2276,7 @@ async def user_api_key_auth(
                 route=route,
                 parent_otel_span=user_api_key_auth_obj.parent_otel_span,
                 api_key=api_key,
+                user_api_key_auth_obj=user_api_key_auth_obj,
             )
 
         # Defense-in-depth: ``_user_api_key_auth_builder`` has multiple early-return
