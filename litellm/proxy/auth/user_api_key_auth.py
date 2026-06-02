@@ -1881,6 +1881,12 @@ async def _run_centralized_common_checks(  # noqa: PLR0915
     ):
         return
 
+    _apply_internal_user_header_mapping_for_auth(
+        user_api_key_auth_obj=user_api_key_auth_obj,
+        request=request,
+        general_settings=general_settings,
+    )
+
     parent_otel_span = user_api_key_auth_obj.parent_otel_span
     # In the integrated auth flow ``_user_api_key_auth_builder`` has already
     # resolved the end-user id and attached it here. Reuse that to avoid a
@@ -2110,6 +2116,24 @@ async def _noop_none() -> None:
     """Sentinel coroutine for asyncio.gather when a fetch is unnecessary
     (e.g. token has no team_id). Keeps the result tuple positional."""
     return None
+
+
+def _apply_internal_user_header_mapping_for_auth(
+    user_api_key_auth_obj: UserAPIKeyAuth,
+    request: Request,
+    general_settings: Optional[dict],
+) -> None:
+    if user_api_key_auth_obj.user_role in (
+        LitellmUserRoles.PROXY_ADMIN,
+        LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY,
+    ):
+        return
+
+    LiteLLMProxyRequestSetup.add_internal_user_from_user_mapping(
+        general_settings=general_settings,
+        user_api_key_dict=user_api_key_auth_obj,
+        headers=_safe_get_request_headers(request),
+    )
 
 
 async def _reserve_budget_after_common_checks(
