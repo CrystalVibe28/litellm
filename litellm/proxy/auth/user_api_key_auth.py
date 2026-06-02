@@ -1881,10 +1881,11 @@ async def _run_centralized_common_checks(  # noqa: PLR0915
     ):
         return
 
-    _apply_internal_user_header_mapping_for_auth(
+    mapped_internal_user_for_auth = _apply_internal_user_header_mapping_for_auth(
         user_api_key_auth_obj=user_api_key_auth_obj,
         request=request,
         general_settings=general_settings,
+        route=route,
     )
 
     parent_otel_span = user_api_key_auth_obj.parent_otel_span
@@ -2052,7 +2053,10 @@ async def _run_centralized_common_checks(  # noqa: PLR0915
     # caller. The token is the source of truth for these paths — force
     # the admin user_object whenever the token says PROXY_ADMIN, even
     # if a DB row was fetched.
-    if user_api_key_auth_obj.user_role == LitellmUserRoles.PROXY_ADMIN:
+    if (
+        user_api_key_auth_obj.user_role == LitellmUserRoles.PROXY_ADMIN
+        and not mapped_internal_user_for_auth
+    ):
         user_object = LiteLLM_UserTable(
             user_id=user_api_key_auth_obj.user_id or litellm_proxy_admin_name,
             user_role=LitellmUserRoles.PROXY_ADMIN,
@@ -2122,17 +2126,24 @@ def _apply_internal_user_header_mapping_for_auth(
     user_api_key_auth_obj: UserAPIKeyAuth,
     request: Request,
     general_settings: Optional[dict],
-) -> None:
+    route: str,
+) -> bool:
     if user_api_key_auth_obj.user_role in (
         LitellmUserRoles.PROXY_ADMIN,
         LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY,
-    ):
-        return
+    ) and not RouteChecks.is_llm_api_route(route=route):
+        return False
+
+    original_user_id = user_api_key_auth_obj.user_id
 
     LiteLLMProxyRequestSetup.add_internal_user_from_user_mapping(
         general_settings=general_settings,
         user_api_key_dict=user_api_key_auth_obj,
         headers=_safe_get_request_headers(request),
+    )
+    return (
+        user_api_key_auth_obj.user_id is not None
+        and user_api_key_auth_obj.user_id != original_user_id
     )
 
 

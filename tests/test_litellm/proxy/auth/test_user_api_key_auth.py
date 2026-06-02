@@ -2608,7 +2608,7 @@ async def test_centralized_common_checks_uses_internal_user_header_mapping():
 
 
 @pytest.mark.asyncio
-async def test_centralized_common_checks_does_not_apply_internal_user_header_to_admin():
+async def test_centralized_common_checks_uses_internal_user_header_mapping_for_admin_llm_route():
     import litellm.proxy.proxy_server as _proxy_server_mod
     from fastapi import Request
     from starlette.datastructures import URL
@@ -2637,6 +2637,143 @@ async def test_centralized_common_checks_does_not_apply_internal_user_header_to_
         ]
     }
     originals = {a: getattr(_proxy_server_mod, a, None) for a in attrs}
+    mapped_user = LiteLLM_UserTable(
+        user_id="openwebui-user-a",
+        spend=11,
+        max_budget=10,
+    )
+    try:
+        for k, v in attrs.items():
+            setattr(_proxy_server_mod, k, v)
+        with (
+            patch(
+                "litellm.proxy.auth.user_api_key_auth.get_user_object",
+                new_callable=AsyncMock,
+                return_value=mapped_user,
+            ) as mock_get_user_object,
+            patch(
+                "litellm.proxy.auth.user_api_key_auth.common_checks",
+                new_callable=AsyncMock,
+            ) as mock_checks,
+        ):
+            await _run_centralized_common_checks(
+                user_api_key_auth_obj=token,
+                request=request,
+                request_data={"model": "gpt-4o"},
+                route="/chat/completions",
+            )
+
+            assert token.user_id == "openwebui-user-a"
+            mock_get_user_object.assert_awaited_once()
+            assert (
+                mock_get_user_object.call_args.kwargs["user_id"] == "openwebui-user-a"
+            )
+            mock_checks.assert_awaited_once()
+            assert mock_checks.call_args.kwargs["user_object"] is mapped_user
+            assert (
+                mock_checks.call_args.kwargs["valid_token"].user_id
+                == "openwebui-user-a"
+            )
+    finally:
+        for k, v in originals.items():
+            setattr(_proxy_server_mod, k, v)
+
+
+@pytest.mark.asyncio
+async def test_centralized_common_checks_blocks_admin_llm_route_when_mapped_internal_user_over_budget():
+    import litellm.proxy.proxy_server as _proxy_server_mod
+    from fastapi import Request
+    from starlette.datastructures import URL
+
+    token = UserAPIKeyAuth(
+        api_key="sk-admin",
+        user_id="default_user_id",
+        user_role=LitellmUserRoles.PROXY_ADMIN,
+    )
+    request = Request(
+        scope={
+            "type": "http",
+            "headers": [(b"x-openwebui-user-id", b"openwebui-user-a")],
+            "method": "POST",
+        }
+    )
+    request._url = URL(url="/chat/completions")
+
+    attrs = _proxy_attrs_for_centralized_checks(user_custom_auth=None)
+    attrs["general_settings"] = {
+        "user_header_mappings": [
+            {
+                "header_name": "X-OpenWebUI-User-Id",
+                "litellm_user_role": "internal_user",
+            }
+        ]
+    }
+    originals = {a: getattr(_proxy_server_mod, a, None) for a in attrs}
+    mapped_user = LiteLLM_UserTable(
+        user_id="openwebui-user-a",
+        spend=11,
+        max_budget=10,
+    )
+    try:
+        for k, v in attrs.items():
+            setattr(_proxy_server_mod, k, v)
+        with (
+            patch(
+                "litellm.proxy.auth.user_api_key_auth.get_user_object",
+                new_callable=AsyncMock,
+                return_value=mapped_user,
+            ),
+            patch(
+                "litellm.proxy.proxy_server.get_current_spend",
+                new_callable=AsyncMock,
+                return_value=11,
+            ),
+        ):
+            with pytest.raises(litellm.BudgetExceededError) as exc_info:
+                await _run_centralized_common_checks(
+                    user_api_key_auth_obj=token,
+                    request=request,
+                    request_data={"model": "gpt-4o"},
+                    route="/chat/completions",
+                )
+
+            assert token.user_id == "openwebui-user-a"
+            assert "openwebui-user-a" in str(exc_info.value)
+    finally:
+        for k, v in originals.items():
+            setattr(_proxy_server_mod, k, v)
+
+
+@pytest.mark.asyncio
+async def test_centralized_common_checks_does_not_apply_internal_user_header_to_admin_management_route():
+    import litellm.proxy.proxy_server as _proxy_server_mod
+    from fastapi import Request
+    from starlette.datastructures import URL
+
+    token = UserAPIKeyAuth(
+        api_key="sk-admin",
+        user_id="default_user_id",
+        user_role=LitellmUserRoles.PROXY_ADMIN,
+    )
+    request = Request(
+        scope={
+            "type": "http",
+            "headers": [(b"x-openwebui-user-id", b"openwebui-user-a")],
+            "method": "GET",
+        }
+    )
+    request._url = URL(url="/user/info")
+
+    attrs = _proxy_attrs_for_centralized_checks(user_custom_auth=None)
+    attrs["general_settings"] = {
+        "user_header_mappings": [
+            {
+                "header_name": "X-OpenWebUI-User-Id",
+                "litellm_user_role": "internal_user",
+            }
+        ]
+    }
+    originals = {a: getattr(_proxy_server_mod, a, None) for a in attrs}
     try:
         for k, v in attrs.items():
             setattr(_proxy_server_mod, k, v)
@@ -2647,8 +2784,8 @@ async def test_centralized_common_checks_does_not_apply_internal_user_header_to_
             await _run_centralized_common_checks(
                 user_api_key_auth_obj=token,
                 request=request,
-                request_data={"model": "gpt-4o"},
-                route="/chat/completions",
+                request_data={},
+                route="/user/info",
             )
 
             assert token.user_id == "default_user_id"
