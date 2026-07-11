@@ -14,7 +14,8 @@ test.describe("Navbar identity scoping", () => {
 
   test("Internal user navbar dropdown shows their own role and user id, not the admin's", async ({ page }) => {
     await page.goto("/ui");
-    await expect(page.getByText("Virtual Keys")).toBeVisible({ timeout: 10_000 });
+    // Scope to the sidebar; the top-bar breadcrumb also shows "Virtual Keys".
+    await expect(page.getByRole("complementary").getByText("Virtual Keys")).toBeVisible({ timeout: 10_000 });
 
     // The account menu button carries the user's role and email/id in its
     // aria-label (see UserDropdown.tsx). Match by partial role.
@@ -22,9 +23,7 @@ test.describe("Navbar identity scoping", () => {
     await expect(accountButton).toHaveAttribute("aria-label", /Internal User/, { timeout: 5_000 });
     await expect(accountButton).toHaveAttribute(
       "aria-label",
-      new RegExp(
-        `signed in as (${escapeRegExp(E2E_INTERNAL_USER_EMAIL)}|${escapeRegExp(E2E_INTERNAL_USER_ID)})`,
-      ),
+      new RegExp(`signed in as (${escapeRegExp(E2E_INTERNAL_USER_EMAIL)}|${escapeRegExp(E2E_INTERNAL_USER_ID)})`),
       { timeout: 5_000 },
     );
 
