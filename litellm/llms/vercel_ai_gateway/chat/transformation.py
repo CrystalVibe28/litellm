@@ -35,16 +35,8 @@ class VercelAIGatewayConfig(OpenAIGPTConfig):
     def _get_openai_compatible_provider_info(
         self, api_base: Optional[str], api_key: Optional[str]
     ) -> Tuple[Optional[str], Optional[str]]:
-        api_base = (
-            api_base
-            or get_secret_str("VERCEL_AI_GATEWAY_API_BASE")
-            or "https://ai-gateway.vercel.sh/v1"
-        )
-        user_api_key = (
-            api_key
-            or get_secret_str("VERCEL_AI_GATEWAY_API_KEY")
-            or get_secret_str("VERCEL_OIDC_TOKEN")
-        )
+        api_base = api_base or get_secret_str("VERCEL_AI_GATEWAY_API_BASE") or "https://ai-gateway.vercel.sh/v1"
+        user_api_key = api_key or get_secret_str("VERCEL_AI_GATEWAY_API_KEY") or get_secret_str("VERCEL_OIDC_TOKEN")
         return api_base, user_api_key
 
     def map_openai_params(
@@ -54,9 +46,7 @@ class VercelAIGatewayConfig(OpenAIGPTConfig):
         model: str,
         drop_params: bool,
     ) -> dict:
-        mapped_openai_params = super().map_openai_params(
-            non_default_params, optional_params, model, drop_params
-        )
+        mapped_openai_params = super().map_openai_params(non_default_params, optional_params, model, drop_params)
 
         # Vercel AI Gateway-only parameters — seed from any extra_body the super call already set
         extra_body = mapped_openai_params.pop("extra_body", {})
@@ -69,9 +59,7 @@ class VercelAIGatewayConfig(OpenAIGPTConfig):
         if reasoning_effort is not None:
             extra_body["reasoning"] = {"effort": reasoning_effort, "enabled": True}
 
-        mapped_openai_params["extra_body"] = (
-            extra_body  # openai client supports `extra_body` param
-        )
+        mapped_openai_params["extra_body"] = extra_body  # openai client supports `extra_body` param
         return mapped_openai_params
 
     def transform_request(
@@ -88,9 +76,7 @@ class VercelAIGatewayConfig(OpenAIGPTConfig):
         Returns:
             dict: The transformed request. Sent as the body of the API call.
         """
-        return super().transform_request(
-            model, messages, optional_params, litellm_params, headers
-        )
+        return super().transform_request(model, messages, optional_params, litellm_params, headers)
 
     def get_error_class(
         self, error_message: str, status_code: int, headers: Union[dict, httpx.Headers]
@@ -101,9 +87,7 @@ class VercelAIGatewayConfig(OpenAIGPTConfig):
             headers=headers,
         )
 
-    def get_models(
-        self, api_key: Optional[str] = None, api_base: Optional[str] = None
-    ) -> List[str]:
+    def get_models(self, api_key: Optional[str] = None, api_base: Optional[str] = None) -> List[str]:
         api_base, _ = self._get_openai_compatible_provider_info(api_base, api_key)
 
         if api_base is None:
