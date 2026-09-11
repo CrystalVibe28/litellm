@@ -84,6 +84,7 @@ from litellm.litellm_core_utils.core_helpers import normalize_drop_params
 from litellm.litellm_core_utils.fallback_generalizations import (
     match_capability_generalizations,
 )
+from litellm.litellm_core_utils.get_provider_specific_headers import MODEL_GROUP_HEADERS_KEY, apply_model_group_headers
 from litellm.litellm_core_utils.sensitive_data_masker import redact_credentials_in_payload
 
 _CachingHandlerResponse = None
@@ -1462,6 +1463,9 @@ def client(original_function):
 
     @wraps(original_function)
     def wrapper(*args, **kwargs):
+        if MODEL_GROUP_HEADERS_KEY in kwargs:
+            kwargs.update(apply_model_group_headers(kwargs))
+            kwargs.pop(MODEL_GROUP_HEADERS_KEY, None)
         # DO NOT MOVE THIS. It always needs to run first
         # Check if this is an async function. If so only execute the async function
         call_type = original_function.__name__
@@ -1766,6 +1770,9 @@ def client(original_function):
 
     @wraps(original_function)
     async def wrapper_async(*args, **kwargs):
+        if MODEL_GROUP_HEADERS_KEY in kwargs:
+            kwargs.update(apply_model_group_headers(kwargs))
+            kwargs.pop(MODEL_GROUP_HEADERS_KEY, None)
         print_args_passed_to_litellm(original_function, args, kwargs)
         start_time: Final = datetime.datetime.now()
         result = None

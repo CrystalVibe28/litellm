@@ -15140,3 +15140,99 @@ def test_deployment_ids_stringifies_ids_and_skips_entries_without_a_model_info_i
         {"no_model_info": True},
     )
     assert Router._deployment_ids(deployments) == frozenset({"a", "2"})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("requested_model", ["public-alias", "target/middle", "public-target"])
+@pytest.mark.parametrize("retry_count", [0, 1])
+async def test_model_group_header_forwarding_across_real_router_fallbacks(stream, requested_model, retry_count):
+    from litellm.proxy import proxy_server
+    from litellm.proxy._types import UserAPIKeyAuth
+    from litellm.proxy.litellm_pre_call_utils import LiteLLMProxyRequestSetup
+    from litellm.types.router import ModelGroupSettings
+
+    calls = []
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls.append((body["model"], dict(request.headers)))
+        assert "_model_group_forwarded_headers" not in body
+        if body["model"] != "last":
+            return httpx.Response(429, json={"error": {"message": "retry another deployment", "type": "rate_limit"}})
+        response = {
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "last",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+        }
+        if stream:
+            chunk = {
+                **response,
+                "object": "chat.completion.chunk",
+                "choices": [{"index": 0, "delta": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+            }
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                text=f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n",
+            )
+        return httpx.Response(200, json=response)
+
+    router = litellm.Router(
+        model_list=[
+            {
+                "model_name": name,
+                "litellm_params": {
+                    "model": f"openai/{upstream_model}",
+                    "api_key": "test-key",
+                    "api_base": "https://headers.test/v1",
+                    "extra_headers": {"x-deployment": upstream_model},
+                },
+            }
+            for name, upstream_model in (("primary", "first"), ("target/middle", "middle"), ("last", "last"))
+        ],
+        model_group_alias={"public-alias": "primary", "public-target": "target/middle"},
+        fallbacks=[{"public-alias": ["target/middle"]}, {"public-target": ["last"]}, {"target/middle": ["last"]}],
+        num_retries=retry_count,
+        retry_after=0,
+        disable_cooldowns=True,
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as http_client:
+        client = openai.AsyncOpenAI(api_key="test-key", base_url="https://headers.test/v1", http_client=http_client)
+        with (
+            patch.object(proxy_server, "llm_router", router),
+            patch.object(
+                litellm, "model_group_settings", ModelGroupSettings(forward_client_headers_to_llm_api=["target/*"])
+            ),
+        ):
+            data = LiteLLMProxyRequestSetup.add_headers_to_llm_call_by_model_group(
+                data={"model": requested_model, "headers": {"x-explicit": "keep"}},
+                headers={
+                    "x-session": "chat-1",
+                    "x-other": "also-forward",
+                    "x-stainless-test": "excluded",
+                    "authorization": "Bearer proxy-key",
+                },
+                user_api_key_dict=UserAPIKeyAuth(),
+            )
+            result = await router.acompletion(
+                **data, messages=[{"role": "user", "content": "hello"}], client=client, stream=stream
+            )
+            if stream:
+                assert "".join([chunk.choices[0].delta.content or "" async for chunk in result]) == "ok"
+            else:
+                assert result.choices[0].message.content == "ok"
+    assert [model for model, _ in calls] == (
+        (["first"] * (1 + retry_count) if requested_model == "public-alias" else [])
+        + ["middle"] * (1 + retry_count)
+        + ["last"]
+    )
+    for model, headers in calls:
+        assert headers.get("x-session") == ("chat-1" if model == "middle" else None)
+        assert headers.get("x-other") == ("also-forward" if model == "middle" else None)
+        assert headers["x-explicit"] == "keep"
+        assert headers["x-deployment"] == model
+        assert "x-stainless-test" not in headers
+        assert headers["authorization"] == "Bearer test-key"
