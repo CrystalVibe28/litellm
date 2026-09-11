@@ -8,12 +8,16 @@ from ..authenticator import Authenticator
 from ..common_utils import (
     GetAccessTokenError,
     ensure_chatgpt_session_id,
+    finalize_chatgpt_request,
     get_chatgpt_default_headers,
+    merge_chatgpt_headers,
 )
 from .streaming_utils import ChatGPTToolCallNormalizer
 
 
 class ChatGPTConfig(OpenAIConfig):
+    sign_request = staticmethod(finalize_chatgpt_request)
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -58,7 +62,11 @@ class ChatGPTConfig(OpenAIConfig):
         account_id: Final = self.authenticator.get_account_id()
         session_id: Final = ensure_chatgpt_session_id(litellm_params)
         default_headers: Final = get_chatgpt_default_headers(api_key or "", account_id, session_id)
-        return {**default_headers, **validated_headers}
+        return merge_chatgpt_headers(
+            default_headers,
+            validated_headers,
+            {key: value for key, value in default_headers.items() if key in {"Authorization", "ChatGPT-Account-Id"}},
+        )
 
     def post_stream_processing(self, stream: Any) -> Any:
         return ChatGPTToolCallNormalizer(stream)

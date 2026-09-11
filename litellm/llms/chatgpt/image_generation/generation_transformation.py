@@ -18,8 +18,10 @@ from ..common_utils import (
     CHATGPT_API_BASE,
     GetAccessTokenError,
     ensure_chatgpt_session_id,
+    finalize_chatgpt_request,
     get_chatgpt_default_headers,
     get_chatgpt_default_instructions,
+    merge_chatgpt_headers,
 )
 from .response_parsing import (
     dedupe,
@@ -49,6 +51,8 @@ class ChatGPTImageGenerationConfig(BaseImageGenerationConfig):
     """
     Bridge OpenAI-style Images API calls to ChatGPT/Codex Responses image generation.
     """
+
+    sign_request = staticmethod(finalize_chatgpt_request)
 
     def __init__(self) -> None:
         self.authenticator = Authenticator()
@@ -104,7 +108,7 @@ class ChatGPTImageGenerationConfig(BaseImageGenerationConfig):
         account_id = self.authenticator.get_account_id()
         session_id = ensure_chatgpt_session_id(litellm_params)
         default_headers = get_chatgpt_default_headers(access_token, account_id, session_id)
-        return {**default_headers, **headers}
+        return merge_chatgpt_headers(default_headers, headers)
 
     def get_complete_url(
         self,
