@@ -1,10 +1,7 @@
-import os
-import sys
 from unittest.mock import patch
 
-sys.path.insert(
-    0, os.path.abspath("../../../../..")
-)  # Adds the parent directory to the system path
+import pytest
+
 
 from litellm.llms.vercel_ai_gateway.chat.transformation import (
     VercelAIGatewayConfig,

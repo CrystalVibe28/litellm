@@ -1,5 +1,5 @@
 import json
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 import httpx
 
@@ -10,10 +10,10 @@ from litellm.types.utils import ImageUsage, ImageUsageInputTokensDetails
 from litellm.utils import CustomStreamWrapper
 
 
-def extract_image_payloads(raw_response: httpx.Response) -> List[str]:
+def extract_image_payloads(raw_response: httpx.Response) -> list[str]:
     content_type = raw_response.headers.get("content-type", "")
     body_text = raw_response.text or ""
-    parsed_payloads: List[dict] = []
+    parsed_payloads: list[dict] = []
 
     if "text/event-stream" in content_type.lower() or looks_like_sse(body_text):
         parsed_payloads = parse_sse_payloads(body_text)
@@ -25,18 +25,16 @@ def extract_image_payloads(raw_response: httpx.Response) -> List[str]:
         if isinstance(response_json, dict):
             parsed_payloads = [response_json]
 
-    images: List[str] = []
-    partial_images: List[str] = []
+    images: list[str] = []
+    partial_images: list[str] = []
     for payload in parsed_payloads:
-        extracted_images, extracted_partial_images = extract_images_from_payload(
-            payload
-        )
+        extracted_images, extracted_partial_images = extract_images_from_payload(payload)
         images.extend(extracted_images)
         partial_images.extend(extracted_partial_images)
     return dedupe(images) or dedupe(partial_images)
 
 
-def extract_image_usage(raw_response: httpx.Response) -> Optional[ImageUsage]:
+def extract_image_usage(raw_response: httpx.Response) -> ImageUsage | None:
     parsed_payloads = get_parsed_payloads(raw_response)
 
     for payload in parsed_payloads:
@@ -53,7 +51,7 @@ def extract_image_usage(raw_response: httpx.Response) -> Optional[ImageUsage]:
     return None
 
 
-def get_parsed_payloads(raw_response: httpx.Response) -> List[dict]:
+def get_parsed_payloads(raw_response: httpx.Response) -> list[dict]:
     content_type = raw_response.headers.get("content-type", "")
     body_text = raw_response.text or ""
 
@@ -82,11 +80,11 @@ def transform_image_usage(usage: dict) -> ImageUsage:
     )
 
 
-def get_image_generation_usage(response_payload: Any) -> Optional[dict]:
+def get_image_generation_usage(response_payload: Any) -> dict | None:
     if not isinstance(response_payload, dict):
         return None
 
-    payloads_to_check: List[dict] = []
+    payloads_to_check: list[dict] = []
     current_payload = response_payload
     visited_container_ids = set()
     while isinstance(current_payload, dict):
@@ -108,7 +106,7 @@ def get_image_generation_usage(response_payload: Any) -> Optional[dict]:
     return None
 
 
-def _get_image_generation_usage_from_payload(response_payload: dict) -> Optional[dict]:
+def _get_image_generation_usage_from_payload(response_payload: dict) -> dict | None:
     tool_usage = response_payload.get("tool_usage")
     if not isinstance(tool_usage, dict):
         return None
@@ -146,8 +144,8 @@ def looks_like_sse(body_text: str) -> bool:
     )
 
 
-def parse_sse_payloads(body_text: str) -> List[dict]:
-    payloads: List[dict] = []
+def parse_sse_payloads(body_text: str) -> list[dict]:
+    payloads: list[dict] = []
     for line in body_text.splitlines():
         stripped_line = CustomStreamWrapper._strip_sse_data_from_chunk(line)
         if not stripped_line:
@@ -165,17 +163,13 @@ def parse_sse_payloads(body_text: str) -> List[dict]:
 
 
 def extract_error_status_code(payload: dict, error_obj: Any) -> int:
-    possible_status_codes: List[Any] = []
+    possible_status_codes: list[Any] = []
     if isinstance(error_obj, dict):
-        possible_status_codes.extend(
-            [error_obj.get("status_code"), error_obj.get("status")]
-        )
+        possible_status_codes.extend([error_obj.get("status_code"), error_obj.get("status")])
 
     response_payload = payload.get("response")
     if isinstance(response_payload, dict):
-        possible_status_codes.extend(
-            [response_payload.get("status_code"), response_payload.get("status")]
-        )
+        possible_status_codes.extend([response_payload.get("status_code"), response_payload.get("status")])
 
     possible_status_codes.extend([payload.get("status_code"), payload.get("status")])
 
@@ -191,7 +185,7 @@ def extract_error_status_code(payload: dict, error_obj: Any) -> int:
     return 400
 
 
-def extract_images_from_payload(payload: dict) -> Tuple[List[str], List[str]]:
+def extract_images_from_payload(payload: dict) -> tuple[list[str], list[str]]:
     event_type = payload.get("type")
     if event_type in (
         ResponsesAPIStreamEvents.RESPONSE_FAILED,
@@ -203,7 +197,7 @@ def extract_images_from_payload(payload: dict) -> Tuple[List[str], List[str]]:
             status_code=extract_error_status_code(payload, error_obj),
         )
 
-    partial_images: List[str] = []
+    partial_images: list[str] = []
     if event_type in (
         ResponsesAPIStreamEvents.IMAGE_GENERATION_PARTIAL_IMAGE,
         "response.image_generation_call.partial_image",
@@ -216,7 +210,7 @@ def extract_images_from_payload(payload: dict) -> Tuple[List[str], List[str]]:
             partial_images.append(b64_json)
         return [], partial_images
 
-    candidates: List[str] = []
+    candidates: list[str] = []
     if event_type == "image_generation.completed":
         b64_json = payload.get("b64_json")
         if isinstance(b64_json, str):
@@ -230,8 +224,8 @@ def extract_images_from_payload(payload: dict) -> Tuple[List[str], List[str]]:
     return dedupe(candidates), dedupe(partial_images)
 
 
-def extract_images_from_nested_value(value: Any) -> List[str]:
-    images: List[str] = []
+def extract_images_from_nested_value(value: Any) -> list[str]:
+    images: list[str] = []
     values_to_visit = [value]
     visited_container_ids = set()
 
@@ -260,8 +254,8 @@ def extract_images_from_nested_value(value: Any) -> List[str]:
     return dedupe(images)
 
 
-def get_image_strings_from_dict(value: dict) -> List[str]:
-    images: List[str] = []
+def get_image_strings_from_dict(value: dict) -> list[str]:
+    images: list[str] = []
     for key in ("result", "b64_json", "image"):
         candidate = value.get(key)
         if isinstance(candidate, str):
@@ -271,9 +265,9 @@ def get_image_strings_from_dict(value: dict) -> List[str]:
     return images
 
 
-def dedupe(values: List[str]) -> List[str]:
+def dedupe(values: list[str]) -> list[str]:
     seen = set()
-    deduped: List[str] = []
+    deduped: list[str] = []
     for value in values:
         if value in seen:
             continue

@@ -1,7 +1,7 @@
 import base64
 from io import BufferedReader, BytesIO
 from os import PathLike
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from httpx._types import RequestFiles
@@ -29,7 +29,7 @@ class ChatGPTImageEditConfig(BaseImageEditConfig):
     def __init__(self) -> None:
         self.image_generation_config = ChatGPTImageGenerationConfig()
 
-    def get_supported_openai_params(self, model: str) -> List[str]:
+    def get_supported_openai_params(self, model: str) -> list[str]:
         return ["size"]
 
     def map_openai_params(
@@ -37,21 +37,17 @@ class ChatGPTImageEditConfig(BaseImageEditConfig):
         image_edit_optional_params: ImageEditOptionalRequestParams,
         model: str,
         drop_params: bool,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         supported_params = self.get_supported_openai_params(model)
-        return {
-            key: value
-            for key, value in image_edit_optional_params.items()
-            if key in supported_params
-        }
+        return {key: value for key, value in image_edit_optional_params.items() if key in supported_params}
 
     def validate_environment(
         self,
         headers: dict,
         model: str,
-        api_key: Optional[str] = None,
-        litellm_params: Optional[dict] = None,
-        api_base: Optional[str] = None,
+        api_key: str | None = None,
+        litellm_params: dict | None = None,
+        api_base: str | None = None,
     ) -> dict:
         return self.image_generation_config.validate_environment(
             headers=headers,
@@ -66,7 +62,7 @@ class ChatGPTImageEditConfig(BaseImageEditConfig):
     def get_complete_url(
         self,
         model: str,
-        api_base: Optional[str],
+        api_base: str | None,
         litellm_params: dict,
     ) -> str:
         return self.image_generation_config.get_complete_url(
@@ -83,16 +79,14 @@ class ChatGPTImageEditConfig(BaseImageEditConfig):
     def transform_image_edit_request(
         self,
         model: str,
-        prompt: Optional[str],
-        image: Optional[FileTypes],
-        image_edit_optional_request_params: Dict,
+        prompt: str | None,
+        image: FileTypes | None,
+        image_edit_optional_request_params: dict,
         litellm_params: GenericLiteLLMParams,
         headers: dict,
-    ) -> Tuple[Dict[str, Any], RequestFiles]:
+    ) -> tuple[dict[str, Any], RequestFiles]:
         optional_params = dict(image_edit_optional_request_params)
-        self.image_generation_config._validate_openai_image_generation_params(
-            model, optional_params
-        )
+        self.image_generation_config._validate_openai_image_generation_params(model, optional_params)
 
         input_images = self._prepare_input_images(image)
         if not input_images:
@@ -124,14 +118,12 @@ class ChatGPTImageEditConfig(BaseImageEditConfig):
             encoding=None,
         )
 
-    def _prepare_input_images(
-        self, image: Optional[Union[FileTypes, List[FileTypes]]]
-    ) -> List[Dict[str, Any]]:
+    def _prepare_input_images(self, image: FileTypes | list[FileTypes] | None) -> list[dict[str, Any]]:
         if image is None:
             return []
 
         images = image if isinstance(image, list) else [image]
-        input_images: List[Dict[str, Any]] = []
+        input_images: list[dict[str, Any]] = []
         for img in images:
             if img is None:
                 continue
@@ -169,9 +161,7 @@ class ChatGPTImageEditConfig(BaseImageEditConfig):
                 return image_file.read()
         raise ValueError("Unsupported image type for ChatGPT image edit.")
 
-    def get_error_class(
-        self, error_message: str, status_code: int, headers: Union[dict, httpx.Headers]
-    ) -> OpenAIError:
+    def get_error_class(self, error_message: str, status_code: int, headers: dict | httpx.Headers) -> OpenAIError:
         return self.image_generation_config.get_error_class(
             error_message=error_message,
             status_code=status_code,
