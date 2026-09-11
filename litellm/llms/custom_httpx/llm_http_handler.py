@@ -2685,12 +2685,14 @@ class BaseLLMHTTPHandler:
             sync_httpx_client = client
 
         headers = responses_api_provider_config.validate_environment(
-            headers=response_api_optional_request_params.get("extra_headers", {}) or {},
+            headers={**(response_api_optional_request_params.get("extra_headers") or {}), **(extra_headers or {})}
+            if custom_llm_provider == "chatgpt"
+            else response_api_optional_request_params.get("extra_headers", {}) or {},
             model=model,
             litellm_params=litellm_params,
         )
 
-        if extra_headers:
+        if extra_headers and custom_llm_provider != "chatgpt":
             headers.update(extra_headers)
 
         # Check if streaming is requested
@@ -2873,12 +2875,14 @@ class BaseLLMHTTPHandler:
             async_httpx_client = client
 
         headers = responses_api_provider_config.validate_environment(
-            headers=response_api_optional_request_params.get("extra_headers", {}) or {},
+            headers={**(response_api_optional_request_params.get("extra_headers") or {}), **(extra_headers or {})}
+            if custom_llm_provider == "chatgpt"
+            else response_api_optional_request_params.get("extra_headers", {}) or {},
             model=model,
             litellm_params=litellm_params,
         )
 
-        if extra_headers:
+        if extra_headers and custom_llm_provider != "chatgpt":
             headers.update(extra_headers)
 
         # Check if streaming is requested

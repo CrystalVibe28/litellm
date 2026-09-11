@@ -24,8 +24,10 @@ from ..common_utils import (
     CHATGPT_API_BASE,
     GetAccessTokenError,
     ensure_chatgpt_session_id,
+    finalize_chatgpt_request,
     get_chatgpt_default_headers,
     get_chatgpt_default_instructions,
+    merge_chatgpt_headers,
 )
 
 if TYPE_CHECKING:
@@ -33,6 +35,8 @@ if TYPE_CHECKING:
 
 
 class ChatGPTResponsesAPIConfig(OpenAIResponsesAPIConfig):
+    sign_request = staticmethod(finalize_chatgpt_request)
+
     def __init__(self) -> None:
         super().__init__()
         self.authenticator = Authenticator()
@@ -59,7 +63,11 @@ class ChatGPTResponsesAPIConfig(OpenAIResponsesAPIConfig):
         account_id: Final = self.authenticator.get_account_id()
         session_id: Final = ensure_chatgpt_session_id(litellm_params)
         default_headers: Final = get_chatgpt_default_headers(access_token, account_id, session_id)
-        return {**default_headers, **headers}
+        return merge_chatgpt_headers(
+            default_headers,
+            headers,
+            {key: value for key, value in default_headers.items() if key in {"Authorization", "ChatGPT-Account-Id"}},
+        )
 
     def transform_responses_api_request(
         self,

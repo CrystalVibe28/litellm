@@ -4,6 +4,7 @@ Constants and helpers for ChatGPT subscription OAuth.
 
 import os
 import platform
+from collections.abc import Mapping
 from typing import Any, Final
 from uuid import uuid4
 
@@ -21,7 +22,8 @@ CHATGPT_API_BASE: Final = "https://chatgpt.com/backend-api/codex"
 CHATGPT_CLIENT_ID: Final = "app_EMoamEEZ73f0CkXaXp7hrann"
 
 DEFAULT_ORIGINATOR: Final = "codex_cli_rs"
-DEFAULT_USER_AGENT: Final = "codex_cli_rs/0.0.0 (Unknown 0; unknown) unknown"
+CODEX_CLIENT_VERSION: Final = "0.154.0"
+DEFAULT_USER_AGENT: Final = f"codex_cli_rs/{CODEX_CLIENT_VERSION} (Unknown 0; unknown) unknown"
 CHATGPT_DEFAULT_INSTRUCTIONS = """You are Codex, based on GPT-5. You are running as a coding agent in the Codex CLI on a user's computer.
 
 ## General
@@ -196,15 +198,6 @@ def _terminal_user_agent() -> str:
     return "unknown"
 
 
-def _get_litellm_version() -> str:
-    try:
-        from importlib.metadata import version
-
-        return version("litellm")
-    except Exception:
-        return "0.0.0"
-
-
 def get_chatgpt_originator() -> str:
     originator: Final = os.getenv("CHATGPT_ORIGINATOR") or DEFAULT_ORIGINATOR
     return _safe_header_value(originator) or DEFAULT_ORIGINATOR
@@ -214,7 +207,7 @@ def get_chatgpt_user_agent(originator: str) -> str:
     override: Final = os.getenv("CHATGPT_USER_AGENT")
     if override:
         return _safe_header_value(override) or DEFAULT_USER_AGENT
-    version: Final = _get_litellm_version()
+    version: Final = CODEX_CLIENT_VERSION
     os_type: Final = platform.system() or "Unknown"
     os_version: Final = platform.release() or "0"
     arch: Final = platform.machine() or "unknown"
@@ -240,10 +233,34 @@ def get_chatgpt_default_headers(
         "user-agent": user_agent,
     }
     if session_id:
-        headers["session_id"] = session_id
+        headers["session-id"] = session_id
     if account_id:
         headers["ChatGPT-Account-Id"] = account_id
     return headers
+
+
+def merge_chatgpt_headers(*sources: Mapping[str, str]) -> dict[str, str]:
+    names: Final = {"authorization": "Authorization", "chatgpt-account-id": "ChatGPT-Account-Id"}
+    return {
+        names.get(key.lower(), key.lower().replace("session_id", "session-id")): value
+        for source in sources
+        for key, value in source.items()
+        if key.lower() not in {"forwarded", "via", "x-api-key"}
+        and not key.lower().startswith(("x-forwarded-", "x-litellm-", "x-stainless-"))
+    }
+
+
+def finalize_chatgpt_request(
+    headers: Mapping[str, str],
+    optional_params: Mapping[str, object],
+    request_data: Mapping[str, object],
+    api_base: str,
+    api_key: str | None = None,
+    model: str | None = None,
+    stream: bool | None = None,
+    fake_stream: bool | None = None,
+) -> tuple[dict[str, str], bytes | None]:
+    return merge_chatgpt_headers(headers, {"Authorization": f"Bearer {api_key}"} if api_key else {}), None
 
 
 def get_chatgpt_default_instructions() -> str:
