@@ -32,6 +32,10 @@ from litellm.constants import (
     X_LITELLM_DISABLE_CALLBACKS,
 )
 from litellm.litellm_core_utils.credential_accessor import CredentialAccessor
+from litellm.litellm_core_utils.get_provider_specific_headers import (
+    MODEL_GROUP_HEADERS_KEY,
+    ModelGroupHeaderForwarding,
+)
 from litellm.litellm_core_utils.initialize_dynamic_callback_params import (
     TRUSTED_CALLBACK_VARS_FIELD,
     _request_blocked_callback_params,
@@ -72,7 +76,9 @@ _REDACTED_HEADER_VALUE: Final = "***REDACTED***"
 _CREDENTIAL_HEADER_NAMES: Final = SpecialHeaders.litellm_credential_header_names() | frozenset(
     {"cookie", "proxy-authorization"}
 )
-_TRANSPORT_ONLY_CREDENTIAL_KEYS: Final = frozenset({"provider_specific_header", "headers", "api_key"})
+_TRANSPORT_ONLY_CREDENTIAL_KEYS: Final = frozenset(
+    {"provider_specific_header", "headers", "api_key", MODEL_GROUP_HEADERS_KEY}
+)
 
 # Matches any header of the form x-<something>-session-id (case-insensitive).
 # Excludes the two explicit litellm headers which are handled with higher priority.
@@ -222,6 +228,7 @@ LITELLM_TRACE_CONTROL_METADATA_FIELDS: Final = frozenset(
 )
 
 _UNTRUSTED_ROOT_CONTROL_FIELDS: Final = (
+    MODEL_GROUP_HEADERS_KEY,
     "proxy_server_request",
     "standard_logging_object",
     "secret_fields",
@@ -1401,6 +1408,23 @@ class LiteLLMProxyRequestSetup:
         """
         from litellm.proxy.auth.auth_checks import _check_model_access_helper
         from litellm.proxy.proxy_server import llm_router
+
+        if (
+            llm_router is not None
+            and litellm.model_group_settings is not None
+            and litellm.model_group_settings.forward_client_headers_to_llm_api is not None
+        ):
+            forwardable: Final = TypeAdapter(dict[str, str | bytes]).validate_python(
+                LiteLLMProxyRequestSetup.add_headers_to_llm_call(headers, user_api_key_dict)
+            )
+            return {  # mutable-ok: subsequent proxy processors mutate the returned request
+                **data,
+                MODEL_GROUP_HEADERS_KEY: ModelGroupHeaderForwarding(
+                    models=tuple(litellm.model_group_settings.forward_client_headers_to_llm_api),
+                    headers=tuple(forwardable.items()),
+                    team_id=user_api_key_dict.team_id,
+                ),
+            }
 
         data_model: Final = data.get("model")
 

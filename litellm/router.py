@@ -31,6 +31,7 @@ from collections.abc import (
     MutableMapping,
     Sequence,
 )
+from dataclasses import replace
 from functools import lru_cache, partial
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final, Literal, Optional, TypeAlias, TypeVar, Union, cast
@@ -79,6 +80,7 @@ from litellm.litellm_core_utils.coroutine_checker import coroutine_checker
 from litellm.litellm_core_utils.credential_accessor import CredentialAccessor
 from litellm.litellm_core_utils.dd_tracing import tracer
 from litellm.litellm_core_utils.get_llm_provider_logic import declared_authenticating_provider
+from litellm.litellm_core_utils.get_provider_specific_headers import MODEL_GROUP_HEADERS_KEY, ModelGroupHeaderForwarding
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLogging
 from litellm.litellm_core_utils.ptu_pricing import (
     PTU_COST_ATTRIBUTION_ENV_VAR,
@@ -3793,6 +3795,9 @@ class Router:
         deployment_litellm_model_name = deployment["litellm_params"]["model"]
         deployment_api_base = deployment["litellm_params"].get("api_base")
         deployment_model_name: Final = deployment["model_name"]
+        forwarding: Final = kwargs.get(MODEL_GROUP_HEADERS_KEY)
+        if isinstance(forwarding, ModelGroupHeaderForwarding):
+            kwargs[MODEL_GROUP_HEADERS_KEY] = replace(forwarding, deployment_model_name=deployment_model_name)
         if is_clientside_credential(request_kwargs=kwargs):
             deployment_pydantic_obj: Final = self._handle_clientside_credential(
                 deployment=deployment, kwargs=kwargs, function_name=function_name
@@ -6533,8 +6538,11 @@ class Router:
 
         async def try_retrieve_batch(model: DeploymentTypedDict):
             try:
-                # Update kwargs with the current model name or any other model-specific adjustments
-                return await litellm.alist_batches(**{**model["litellm_params"], **kwargs})
+                call_kwargs: Final = {**model["litellm_params"], **kwargs}
+                forwarding: Final = kwargs.get(MODEL_GROUP_HEADERS_KEY)
+                if isinstance(forwarding, ModelGroupHeaderForwarding):
+                    call_kwargs[MODEL_GROUP_HEADERS_KEY] = replace(forwarding, deployment_model_name=model["model_name"])
+                return await litellm.alist_batches(**call_kwargs)
             except Exception:
                 return None
 

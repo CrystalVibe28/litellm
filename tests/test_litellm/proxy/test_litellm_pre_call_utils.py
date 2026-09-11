@@ -7912,6 +7912,40 @@ async def test_client_supplied_omit_marker_never_reaches_the_spend_log(
     )
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_model_group_headers_are_server_owned_and_excluded_from_body_snapshot(enabled):
+    import litellm
+    from litellm.proxy import proxy_server
+    from litellm.types.router import ModelGroupSettings
+    from litellm.litellm_core_utils.get_provider_specific_headers import (
+        MODEL_GROUP_HEADERS_KEY,
+        ModelGroupHeaderForwarding,
+    )
+
+    router = litellm.Router(model_list=[])
+    request = _make_request_mock("/v1/chat/completions", {"x-session": "actual-chat", "content-type": "application/json"})
+    with patch.object(proxy_server, "llm_router", router), patch.object(
+        litellm, "model_group_settings",
+        ModelGroupSettings(forward_client_headers_to_llm_api=["target/*"]) if enabled else None,
+    ):
+        data = await add_litellm_data_to_request(
+            data={"model": "alias", MODEL_GROUP_HEADERS_KEY: {"headers": {"x-session": "forged"}}},
+            request=request,
+            user_api_key_dict=UserAPIKeyAuth(),
+            proxy_config=MagicMock(),
+            general_settings={},
+            version="test",
+        )
+    assert MODEL_GROUP_HEADERS_KEY not in data["proxy_server_request"]["body"]
+    if enabled:
+        assert isinstance(data[MODEL_GROUP_HEADERS_KEY], ModelGroupHeaderForwarding)
+        assert dict(data[MODEL_GROUP_HEADERS_KEY].headers) == {"x-session": "actual-chat"}
+        assert "headers" not in data
+    else:
+        assert MODEL_GROUP_HEADERS_KEY not in data
+
+
 def test_default_team_settings_bool_turn_off_message_logging_redacts():
     from litellm.proxy.proxy_server import ProxyConfig
 
