@@ -21,10 +21,80 @@ from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import LlmProviders
 from litellm.utils import ProviderConfigManager
 from litellm.llms.chatgpt.common_utils import get_chatgpt_user_agent, merge_chatgpt_headers
-from litellm.llms.custom_httpx.http_handler import HTTPHandler
+from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 
 
 class TestChatGPTResponsesAPITransformation:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("stream", (False, True))
+    async def test_async_responses_wire_contract(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        stream: bool,
+    ) -> None:
+        monkeypatch.setenv("CHATGPT_TOKEN_DIR", str(tmp_path))
+        monkeypatch.setenv("CHATGPT_API_BASE", "https://chatgpt.test/backend-api/codex")
+        (tmp_path / "auth.json").write_text(
+            json.dumps({"access_token": "test-token", "account_id": "test-account", "expires_at": time.time() + 3600})
+        )
+
+        def upstream(request: httpx.Request) -> httpx.Response:
+            body: Final = json.loads(request.content)
+            assert body["instructions"] == "Caller instructions"
+            assert body["prompt_cache_key"] == "cache-key"
+            assert body["stream"] is True
+            assert body["store"] is False
+            assert request.headers["authorization"] == "Bearer test-token"
+            assert request.headers["chatgpt-account-id"] == "test-account"
+            assert request.headers["thread-id"] == "caller-thread"
+            assert request.headers["x-codex-turn-state"] == "opaque-state"
+            assert "x-forwarded-for" not in request.headers
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                text=(
+                    'data: {"type":"response.completed","response":{"id":"resp_test","object":"response",'
+                    '"created_at":1,"status":"completed","model":"gpt-5.5","output":[]}}\n\n'
+                ),
+            )
+
+        handler: Final = AsyncHTTPHandler()
+        await handler.close()
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as client:
+            handler.client = client
+            result: Final = await litellm.aresponses(
+                model="chatgpt/gpt-5.5",
+                input="hello",
+                stream=stream,
+                client=handler,
+                instructions="Caller instructions",
+                extra_headers={
+                    "authorization": "wrong",
+                    "ChatGPT-Account-Id": "wrong",
+                    "Thread-Id": "caller-thread",
+                    "X-Codex-Turn-State": "opaque-state",
+                    "X-Forwarded-For": "private",
+                },
+                extra_body={"store": True, "prompt_cache_key": "cache-key"},
+            )
+            if stream:
+                events: Final = tuple([event async for event in result])
+                assert events[-1].type == "response.completed"
+            else:
+                assert result.object == "response"
+                assert result.output == []
+
+    def test_instructions_default_is_explicit_and_caller_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from litellm.llms.chatgpt.common_utils import normalize_chatgpt_responses_request
+
+        monkeypatch.setenv("CHATGPT_DEFAULT_INSTRUCTIONS", "Configured default")
+        assert normalize_chatgpt_responses_request({})["instructions"] == "Configured default"
+        assert normalize_chatgpt_responses_request({"instructions": ""})["instructions"] == ""
+        assert normalize_chatgpt_responses_request({"instructions": "Caller"})["instructions"] == "Caller"
+        monkeypatch.setenv("CHATGPT_DEFAULT_INSTRUCTIONS", "")
+        assert normalize_chatgpt_responses_request({})["instructions"] == ""
+
     def test_codex_identity_and_explicit_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("CHATGPT_USER_AGENT", raising=False)
         assert get_chatgpt_user_agent("codex_cli_rs").startswith("codex_cli_rs/0.154.0 (")
@@ -38,7 +108,8 @@ class TestChatGPTResponsesAPITransformation:
         )
         assert headers == {"user-agent": "explicit", "session-id": "session"}
 
-    def test_responses_wire_headers(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("stream", (False, True))
+    def test_responses_wire_headers(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stream: bool) -> None:
         monkeypatch.setenv("CHATGPT_TOKEN_DIR", str(tmp_path))
         monkeypatch.setenv("CHATGPT_API_BASE", "https://chatgpt.test/backend-api/codex")
         (tmp_path / "auth.json").write_text(
@@ -46,6 +117,13 @@ class TestChatGPTResponsesAPITransformation:
         )
 
         def upstream(request: httpx.Request) -> httpx.Response:
+            body: Final = json.loads(request.content)
+            assert body["instructions"] == "Keep my caller instructions"
+            assert body["prompt_cache_key"] == "caller-cache"
+            assert body["text"] == {"verbosity": "low"}
+            assert body["stream"] is True
+            assert body["store"] is False
+            assert "temperature" not in body
             assert request.headers["authorization"] == "Bearer test-token"
             assert request.headers["chatgpt-account-id"] == "test-account"
             assert request.headers["user-agent"] == "custom-codex/2.0"
@@ -67,8 +145,16 @@ class TestChatGPTResponsesAPITransformation:
             result: Final = litellm.responses(
                 model="chatgpt/gpt-5.5",
                 input="hello",
-                stream=True,
+                stream=stream,
                 client=HTTPHandler(client=client),
+                instructions="Keep my caller instructions",
+                extra_body={
+                    "stream": False,
+                    "store": True,
+                    "temperature": 0.2,
+                    "prompt_cache_key": "caller-cache",
+                    "text": {"verbosity": "low"},
+                },
                 extra_headers={
                     "User-Agent": "custom-codex/2.0",
                     "Authorization": "wrong",
@@ -78,8 +164,12 @@ class TestChatGPTResponsesAPITransformation:
                     "X-LiteLLM-Secret": "internal",
                 },
             )
-            events: Final = tuple(result)
-        assert events[-1].type == "response.completed"
+            if stream:
+                events: Final = tuple(result)
+                assert events[-1].type == "response.completed"
+            else:
+                assert result.object == "response"
+                assert result.output == []
 
     @pytest.mark.parametrize(
         "model_name",
@@ -210,7 +300,7 @@ class TestChatGPTResponsesAPITransformation:
 
         assert request["stream"] is True
         assert "reasoning.encrypted_content" in request["include"]
-        assert request["instructions"].startswith("You are Codex, based on GPT-5.")
+        assert request["instructions"] == ""
 
     @pytest.mark.parametrize(
         "model_name",

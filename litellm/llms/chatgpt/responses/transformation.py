@@ -26,8 +26,8 @@ from ..common_utils import (
     ensure_chatgpt_session_id,
     finalize_chatgpt_request,
     get_chatgpt_default_headers,
-    get_chatgpt_default_instructions,
     merge_chatgpt_headers,
+    normalize_chatgpt_responses_request,
 )
 
 if TYPE_CHECKING:
@@ -84,35 +84,7 @@ class ChatGPTResponsesAPIConfig(OpenAIResponsesAPIConfig):
             litellm_params,
             headers,
         )
-        base_instructions: Final = get_chatgpt_default_instructions()
-        existing_instructions: Final = request.get("instructions")
-        if existing_instructions:
-            if base_instructions not in existing_instructions:
-                request["instructions"] = f"{base_instructions}\n\n{existing_instructions}"
-        else:
-            request["instructions"] = base_instructions
-        request["store"] = False
-        request["stream"] = True
-        include: Final = list(request.get("include") or [])
-        if "reasoning.encrypted_content" not in include:
-            include.append("reasoning.encrypted_content")
-        request["include"] = include
-
-        allowed_keys: Final = {
-            "model",
-            "input",
-            "instructions",
-            "stream",
-            "store",
-            "include",
-            "tools",
-            "tool_choice",
-            "reasoning",
-            "previous_response_id",
-            "truncation",
-        }
-
-        return {k: v for k, v in request.items() if k in allowed_keys}
+        return normalize_chatgpt_responses_request(request)
 
     def transform_response_api_response(
         self,

@@ -2714,7 +2714,11 @@ class BaseLLMHTTPHandler:
 
         if extra_body:
             data.update(extra_body)
-        stream = bool(stream or data.get("stream"))
+        if custom_llm_provider == "chatgpt":
+            from litellm.llms.chatgpt.common_utils import normalize_chatgpt_responses_request
+
+            data = normalize_chatgpt_responses_request(data)
+        stream = bool(stream or (custom_llm_provider != "chatgpt" and data.get("stream")))
 
         # Preserve the OpenAI-style request context (not sent to the provider) for streaming
         # hooks/metadata; the streaming iterator now consumes this to run deployment hooks
@@ -2904,7 +2908,11 @@ class BaseLLMHTTPHandler:
 
         if extra_body:
             data.update(extra_body)
-        stream = bool(stream or data.get("stream"))
+        if custom_llm_provider == "chatgpt":
+            from litellm.llms.chatgpt.common_utils import normalize_chatgpt_responses_request
+
+            data = normalize_chatgpt_responses_request(data)
+        stream = bool(stream or (custom_llm_provider != "chatgpt" and data.get("stream")))
 
         # Preserve the OpenAI-style request context (not sent to the provider) for streaming
         # hooks/metadata; the streaming iterator now consumes this to run deployment hooks
