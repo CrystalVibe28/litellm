@@ -100,6 +100,13 @@ spec:
             - name: DATABASE_URL
               value: {{ .Values.db.url | quote }}
             {{- end }}
+            {{- if and .Values.db.useExisting .Values.db.readReplicaUrl .Values.db.secret.readReplicaEndpointKey (not .Values.db.secret.readReplicaUrlKey) }}
+            - name: DATABASE_READER_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.db.secret.name }}
+                  key: {{ .Values.db.secret.readReplicaEndpointKey }}
+            {{- end }}
             {{- if and .Values.db.useExisting .Values.db.secret.readReplicaUrlKey }}
             - name: DATABASE_URL_READ_REPLICA
               valueFrom:
@@ -142,6 +149,16 @@ spec:
             {{- with .Values.extraEnvVars }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+            {{- if .Values.billingMetrics.enabled }}
+            {{- include "litellm.billingMetricsEnv" . | nindent 12 }}
+            {{- end }}
+            {{- if .Values.metricsServer.enabled }}
+            {{- if eq (int .Values.metricsServer.port) (int .Values.service.port) }}
+            {{- fail "metricsServer.port must differ from service.port" }}
+            {{- end }}
+            - name: PROMETHEUS_METRICS_PORT
+              value: {{ .Values.metricsServer.port | quote }}
+            {{- end }}
             {{- if .Values.migrationJob.enabled }}
             # Schema updates are owned by the dedicated migrations Job; skip
             # the proxy's startup `prisma db push` so N replicas don't race
@@ -179,6 +196,11 @@ spec:
             - name: http
               containerPort: {{ .Values.service.port }}
               protocol: TCP
+            {{- if .Values.metricsServer.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metricsServer.port }}
+              protocol: TCP
+            {{- end }}
           livenessProbe:
             httpGet:
               path: {{ .Values.livenessProbe.path | quote }}
@@ -220,6 +242,9 @@ spec:
             - name: npm
               mountPath: /.npm
           {{- end }}
+          {{- if .Values.billingMetrics.enabled }}
+            {{- include "litellm.billingMetricsVolumeMounts" . | nindent 12 }}
+          {{- end }}
           {{- with .Values.volumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -252,6 +277,9 @@ spec:
             items:
               - key: {{ .Values.proxyConfigMap.key | default "config.yaml" }}
                 path: "config.yaml"
+        {{- if .Values.billingMetrics.enabled }}
+        {{- include "litellm.billingMetricsVolumes" . | nindent 8 }}
+        {{- end }}
       {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}

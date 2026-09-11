@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -53,9 +53,7 @@ class ChatGPTImageGenerationConfig(BaseImageGenerationConfig):
     def __init__(self) -> None:
         self.authenticator = Authenticator()
 
-    def get_supported_openai_params(
-        self, model: str
-    ) -> List[OpenAIImageGenerationOptionalParams]:
+    def get_supported_openai_params(self, model: str) -> list[OpenAIImageGenerationOptionalParams]:
         return [
             "output_format",
             "size",
@@ -88,11 +86,11 @@ class ChatGPTImageGenerationConfig(BaseImageGenerationConfig):
         self,
         headers: dict,
         model: str,
-        messages: List[AllMessageValues],
+        messages: list[AllMessageValues],
         optional_params: dict,
         litellm_params: dict,
-        api_key: Optional[str] = None,
-        api_base: Optional[str] = None,
+        api_key: str | None = None,
+        api_base: str | None = None,
     ) -> dict:
         try:
             access_token = self.authenticator.get_access_token()
@@ -105,19 +103,17 @@ class ChatGPTImageGenerationConfig(BaseImageGenerationConfig):
 
         account_id = self.authenticator.get_account_id()
         session_id = ensure_chatgpt_session_id(litellm_params)
-        default_headers = get_chatgpt_default_headers(
-            access_token, account_id, session_id
-        )
+        default_headers = get_chatgpt_default_headers(access_token, account_id, session_id)
         return {**default_headers, **headers}
 
     def get_complete_url(
         self,
-        api_base: Optional[str],
-        api_key: Optional[str],
+        api_base: str | None,
+        api_key: str | None,
         model: str,
         optional_params: dict,
         litellm_params: dict,
-        stream: Optional[bool] = None,
+        stream: bool | None = None,
     ) -> str:
         api_base = self.authenticator.get_api_base() or CHATGPT_API_BASE
         api_base = self._canonicalize_codex_api_base(api_base)
@@ -126,8 +122,7 @@ class ChatGPTImageGenerationConfig(BaseImageGenerationConfig):
     @staticmethod
     def _canonicalize_codex_api_base(api_base: str) -> str:
         api_base = api_base.rstrip("/")
-        if api_base.endswith("/responses"):
-            api_base = api_base[: -len("/responses")]
+        api_base = api_base.removesuffix("/responses")
         if api_base.endswith("/backend-api"):
             return f"{api_base}/codex"
         return api_base
@@ -152,10 +147,10 @@ class ChatGPTImageGenerationConfig(BaseImageGenerationConfig):
     def _build_responses_image_request(
         self,
         model: str,
-        prompt: Optional[str],
+        prompt: str | None,
         optional_params: dict,
         litellm_params: dict,
-        input_images: Optional[List[Dict[str, Any]]] = None,
+        input_images: list[dict[str, Any]] | None = None,
     ) -> dict:
         # Intentionally pinned fallback for ChatGPT image generation through the
         # Codex Responses API. Users can override this per request or via
@@ -165,13 +160,13 @@ class ChatGPTImageGenerationConfig(BaseImageGenerationConfig):
             or litellm_params.get("chatgpt_responses_model")
             or "gpt-5.5"
         )
-        content: List[Dict[str, Any]] = []
+        content: list[dict[str, Any]] = []
         if prompt:
             content.append({"type": "input_text", "text": prompt})
         if input_images:
             content.extend(input_images)
 
-        request: Dict[str, Any] = {
+        request: dict[str, Any] = {
             "model": responses_model,
             "input": [
                 {
@@ -196,20 +191,15 @@ class ChatGPTImageGenerationConfig(BaseImageGenerationConfig):
 
         return request
 
-    def _validate_openai_image_generation_params(
-        self, model: str, optional_params: dict
-    ) -> None:
+    def _validate_openai_image_generation_params(self, model: str, optional_params: dict) -> None:
         if not model.startswith(GPT_IMAGE_MODEL_PREFIX):
             raise ValueError(
-                "ChatGPT image generation requires a GPT Image model "
-                "(for example gpt-image-1.5 or gpt-image-2)."
+                "ChatGPT image generation requires a GPT Image model (for example gpt-image-1.5 or gpt-image-2)."
             )
 
         supported_params = set(self.get_supported_openai_params(model))
         unsupported_params = [
-            key
-            for key in optional_params
-            if key not in supported_params and key not in INTERNAL_OPTIONAL_PARAMS
+            key for key in optional_params if key not in supported_params and key not in INTERNAL_OPTIONAL_PARAMS
         ]
         if unsupported_params:
             raise ValueError(
@@ -231,8 +221,8 @@ class ChatGPTImageGenerationConfig(BaseImageGenerationConfig):
         optional_params: dict,
         litellm_params: dict,
         encoding: Any,
-        api_key: Optional[str] = None,
-        json_mode: Optional[bool] = None,
+        api_key: str | None = None,
+        json_mode: bool | None = None,
     ) -> ImageResponse:
         logging_obj.post_call(
             input=request_data.get("input", ""),
@@ -248,11 +238,7 @@ class ChatGPTImageGenerationConfig(BaseImageGenerationConfig):
                 status_code=raw_response.status_code,
             )
 
-        response = ImageResponse(
-            data=[
-                ImageObject(b64_json=image_payload) for image_payload in image_payloads
-            ]
-        )
+        response = ImageResponse(data=[ImageObject(b64_json=image_payload) for image_payload in image_payloads])
         response.usage = None
         image_usage = self._extract_image_usage(raw_response)
         if image_usage is not None:
@@ -262,15 +248,13 @@ class ChatGPTImageGenerationConfig(BaseImageGenerationConfig):
         response._hidden_params["model"] = model
         return response
 
-    def _extract_image_payloads(self, raw_response: httpx.Response) -> List[str]:
+    def _extract_image_payloads(self, raw_response: httpx.Response) -> list[str]:
         return extract_image_payloads(raw_response)
 
-    def _extract_image_usage(
-        self, raw_response: httpx.Response
-    ) -> Optional[ImageUsage]:
+    def _extract_image_usage(self, raw_response: httpx.Response) -> ImageUsage | None:
         return extract_image_usage(raw_response)
 
-    def _get_parsed_payloads(self, raw_response: httpx.Response) -> List[dict]:
+    def _get_parsed_payloads(self, raw_response: httpx.Response) -> list[dict]:
         return get_parsed_payloads(raw_response)
 
     @staticmethod
@@ -278,7 +262,7 @@ class ChatGPTImageGenerationConfig(BaseImageGenerationConfig):
         return transform_image_usage(usage)
 
     @staticmethod
-    def _get_image_generation_usage(response_payload: Any) -> Optional[dict]:
+    def _get_image_generation_usage(response_payload: Any) -> dict | None:
         return get_image_generation_usage(response_payload)
 
     @staticmethod
@@ -290,28 +274,24 @@ class ChatGPTImageGenerationConfig(BaseImageGenerationConfig):
         return looks_like_sse(body_text)
 
     @staticmethod
-    def _parse_sse_payloads(body_text: str) -> List[dict]:
+    def _parse_sse_payloads(body_text: str) -> list[dict]:
         return parse_sse_payloads(body_text)
 
-    def _extract_images_from_payload(
-        self, payload: dict
-    ) -> Tuple[List[str], List[str]]:
+    def _extract_images_from_payload(self, payload: dict) -> tuple[list[str], list[str]]:
         return extract_images_from_payload(payload)
 
-    def _extract_images_from_nested_value(self, value: Any) -> List[str]:
+    def _extract_images_from_nested_value(self, value: Any) -> list[str]:
         return extract_images_from_nested_value(value)
 
     @staticmethod
-    def _get_image_strings_from_dict(value: dict) -> List[str]:
+    def _get_image_strings_from_dict(value: dict) -> list[str]:
         return get_image_strings_from_dict(value)
 
     @staticmethod
-    def _dedupe(values: List[str]) -> List[str]:
+    def _dedupe(values: list[str]) -> list[str]:
         return dedupe(values)
 
-    def get_error_class(
-        self, error_message: str, status_code: int, headers: Union[dict, httpx.Headers]
-    ) -> OpenAIError:
+    def get_error_class(self, error_message: str, status_code: int, headers: dict | httpx.Headers) -> OpenAIError:
         return OpenAIError(
             message=error_message,
             status_code=status_code,
