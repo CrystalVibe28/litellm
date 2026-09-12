@@ -108,7 +108,11 @@ class ChatGPTImageGenerationConfig(BaseImageGenerationConfig):
         account_id = self.authenticator.get_account_id()
         session_id = ensure_chatgpt_session_id(litellm_params)
         default_headers = get_chatgpt_default_headers(access_token, account_id, session_id)
-        return merge_chatgpt_headers(default_headers, headers)
+        return merge_chatgpt_headers(
+            default_headers,
+            headers,
+            {key: value for key, value in default_headers.items() if key in {"Authorization", "ChatGPT-Account-Id"}},
+        )
 
     def get_complete_url(
         self,

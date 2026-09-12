@@ -182,7 +182,12 @@ def test_chatgpt_image_generation_validates_environment():
     config.authenticator = cast(Any, FakeAuthenticator())
 
     headers = config.validate_environment(
-        headers={"content-type": "application/custom", "x-extra": "1"},
+        headers={
+            "content-type": "application/custom",
+            "x-extra": "1",
+            "authorization": "Bearer downstream",
+            "CHATGPT-ACCOUNT-ID": "downstream-account",
+        },
         model="gpt-image-2",
         messages=[],
         optional_params={},
