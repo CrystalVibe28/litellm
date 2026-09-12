@@ -42,6 +42,7 @@ class TestChatGPTResponsesAPITransformation:
         def upstream(request: httpx.Request) -> httpx.Response:
             body: Final = json.loads(request.content)
             assert body["instructions"] == "Caller instructions"
+            assert body["input"] == [{"role": "user", "content": [{"type": "input_text", "text": "hello"}]}]
             assert body["prompt_cache_key"] == "cache-key"
             assert body["stream"] is True
             assert body["store"] is False
@@ -119,6 +120,7 @@ class TestChatGPTResponsesAPITransformation:
         def upstream(request: httpx.Request) -> httpx.Response:
             body: Final = json.loads(request.content)
             assert body["instructions"] == "Keep my caller instructions"
+            assert body["input"] == [{"role": "user", "content": [{"type": "input_text", "text": "hello"}]}]
             assert body["prompt_cache_key"] == "caller-cache"
             assert body["text"] == {"verbosity": "low"}
             assert body["stream"] is True

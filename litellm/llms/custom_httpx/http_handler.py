@@ -59,6 +59,35 @@ except Exception:
     version = "0.0.0"
 
 
+def _can_refresh_chatgpt(error: httpx.HTTPStatusError, logging_obj: LiteLLMLoggingObject | None) -> bool:
+    return (
+        error.response.status_code == 401
+        and getattr(logging_obj, "custom_llm_provider", None) == "chatgpt"
+        and isinstance(error.request.stream, httpx.ByteStream)
+    )
+
+
+def _chatgpt_retry_request(request: httpx.Request) -> httpx.Request:
+    from litellm.llms.chatgpt.authenticator import Authenticator
+    from litellm.llms.chatgpt.common_utils import merge_chatgpt_headers
+
+    authenticator: Final = Authenticator()
+    token: Final = authenticator.refresh_access_token(request.headers.get("authorization", "").removeprefix("Bearer "))
+    account: Final = authenticator.get_account_id()
+    headers: Final = merge_chatgpt_headers(
+        {key: value for key, value in request.headers.items() if key not in {"authorization", "chatgpt-account-id"}},
+        {"Authorization": f"Bearer {token}"},
+        {"ChatGPT-Account-Id": account} if account else {},
+    )
+    return httpx.Request(
+        request.method,
+        request.url,
+        headers=headers,
+        content=request.content,
+        extensions=request.extensions,
+    )
+
+
 # aiohttp 3.10+ exposes a `socket_factory` kwarg on TCPConnector. Older
 # versions don't — detect once and skip the keep-alive wiring there.
 # https://docs.aiohttp.org/en/stable/client_reference.html#aiohttp.TCPConnector
@@ -737,6 +766,15 @@ class AsyncHTTPHandler:
                 headers=headers,
             )
         except httpx.HTTPStatusError as e:
+            if _can_refresh_chatgpt(e, logging_obj):
+                await e.response.aclose()
+                retry_request: Final = await asyncio.to_thread(_chatgpt_retry_request, e.request)
+                try:
+                    retried: Final = await self.client.send(retry_request, stream=stream)
+                    retried.raise_for_status()
+                    return retried
+                except httpx.HTTPStatusError as retry_error:
+                    await _raise_masked_async_error(retry_error, stream)
             await _raise_masked_async_error(e, stream)
         except Exception as e:
             raise e
@@ -1381,6 +1419,15 @@ class HTTPHandler:
                 llm_provider="litellm-httpx-handler",
             )
         except httpx.HTTPStatusError as e:
+            if _can_refresh_chatgpt(e, logging_obj):
+                e.response.close()
+                retry_request: Final = _chatgpt_retry_request(e.request)
+                try:
+                    retried: Final = self.client.send(retry_request, stream=stream)
+                    retried.raise_for_status()
+                    return retried
+                except httpx.HTTPStatusError as retry_error:
+                    _raise_masked_sync_error(retry_error, stream)
             _raise_masked_sync_error(e, stream)
         except Exception as e:
             raise e

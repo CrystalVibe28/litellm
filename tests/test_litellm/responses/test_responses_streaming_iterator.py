@@ -8,6 +8,8 @@ crashed with exit 139 whenever any CustomLogger was registered).
 
 import asyncio
 import time
+from collections.abc import AsyncIterator, Iterator
+from typing import Final
 
 import httpx
 import pytest
@@ -18,7 +20,96 @@ from litellm.litellm_core_utils import thread_pool_executor as thread_pool_execu
 from litellm.responses import streaming_iterator as responses_streaming_iterator_module
 from litellm.litellm_core_utils.litellm_logging import Logging as LitellmLogging
 from litellm.responses.streaming_iterator import ResponsesAPIStreamingIterator
+from litellm.responses.streaming_iterator import SyncResponsesAPIStreamingIterator
+from litellm.llms.openai.responses.transformation import OpenAIResponsesAPIConfig
 from litellm.types.llms.openai import ResponsesAPIResponse
+
+
+_COMPLETED_EVENT: Final = (
+    b'data: {"type":"response.completed","response":{"id":"resp_test","object":"response",'
+    b'"created_at":1,"status":"completed","model":"gpt-5.5","output":[]}}\n\n'
+)
+
+
+class ClosingAsyncStream(httpx.AsyncByteStream):
+    def __init__(self, outcome: str) -> None:
+        self.outcome = outcome
+        self.closed = False
+        self.started = asyncio.Event()
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        self.started.set()
+        if self.outcome == "cancel":
+            await asyncio.Event().wait()
+        if self.outcome == "error":
+            raise httpx.ReadError("synthetic stream failure")
+        if self.outcome == "complete":
+            yield _COMPLETED_EVENT
+            raise AssertionError("The terminal event must release the connection without another read")
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class ClosingSyncStream(httpx.SyncByteStream):
+    def __init__(self) -> None:
+        self.closed = False
+
+    def __iter__(self) -> Iterator[bytes]:
+        yield _COMPLETED_EVENT
+        raise AssertionError("The terminal event must release the connection without another read")
+
+    def close(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ("complete", "empty", "error", "cancel", "close"))
+async def test_response_stream_releases_connection(outcome: str) -> None:
+    stream: Final = ClosingAsyncStream(outcome)
+    response: Final = httpx.Response(200, stream=stream)
+    iterator: Final = ResponsesAPIStreamingIterator(
+        response=response,
+        model="gpt-5.5",
+        responses_api_provider_config=OpenAIResponsesAPIConfig(),
+        logging_obj=_make_logging_obj(),
+    )
+    if outcome == "close":
+        await iterator.aclose()
+    elif outcome == "cancel":
+        pending: Final = asyncio.create_task(anext(iterator))
+        await stream.started.wait()
+        pending.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await pending
+    elif outcome == "error":
+        with pytest.raises(httpx.ReadError):
+            await anext(iterator)
+    elif outcome == "empty":
+        with pytest.raises(StopAsyncIteration):
+            await anext(iterator)
+    else:
+        assert (await anext(iterator)).type == "response.completed"
+    assert stream.closed
+    assert response.is_closed
+    with pytest.raises(StopAsyncIteration):
+        await anext(iterator)
+
+
+def test_sync_response_stream_closes_at_terminal_event() -> None:
+    stream: Final = ClosingSyncStream()
+    response: Final = httpx.Response(200, stream=stream)
+    iterator: Final = SyncResponsesAPIStreamingIterator(
+        response=response,
+        model="gpt-5.5",
+        responses_api_provider_config=OpenAIResponsesAPIConfig(),
+        logging_obj=_make_logging_obj(),
+    )
+    assert next(iterator).type == "response.completed"
+    assert stream.closed
+    assert response.is_closed
+    with pytest.raises(StopIteration):
+        next(iterator)
 
 
 class RecordingCustomLogger(CustomLogger):
