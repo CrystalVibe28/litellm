@@ -4,10 +4,12 @@ Constants and helpers for ChatGPT subscription OAuth.
 
 import os
 import platform
+from collections.abc import Mapping
 from typing import Any, Final
 from uuid import uuid4
 
 import httpx
+from pydantic import TypeAdapter
 
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 
@@ -21,88 +23,9 @@ CHATGPT_API_BASE: Final = "https://chatgpt.com/backend-api/codex"
 CHATGPT_CLIENT_ID: Final = "app_EMoamEEZ73f0CkXaXp7hrann"
 
 DEFAULT_ORIGINATOR: Final = "codex_cli_rs"
-DEFAULT_USER_AGENT: Final = "codex_cli_rs/0.0.0 (Unknown 0; unknown) unknown"
-CHATGPT_DEFAULT_INSTRUCTIONS = """You are Codex, based on GPT-5. You are running as a coding agent in the Codex CLI on a user's computer.
-
-## General
-
-- When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)
-
-## Editing constraints
-
-- Default to ASCII when editing or creating files. Only introduce non-ASCII or other Unicode characters when there is a clear justification and the file already uses them.
-- Add succinct code comments that explain what is going on if code is not self-explanatory. You should not add comments like "Assigns the value to the variable", but a brief comment might be useful ahead of a complex code block that the user would otherwise have to spend time parsing out. Usage of these comments should be rare.
-- Try to use apply_patch for single file edits, but it is fine to explore other options to make the edit if it does not work well. Do not use apply_patch for changes that are auto-generated (i.e. generating package.json or running a lint or format command like gofmt) or when scripting is more efficient (such as search and replacing a string across a codebase).
-- You may be in a dirty git worktree.
-    * NEVER revert existing changes you did not make unless explicitly requested, since these changes were made by the user.
-    * If asked to make a commit or code edits and there are unrelated changes to your work or changes that you didn't make in those files, don't revert those changes.
-    * If the changes are in files you've touched recently, you should read carefully and understand how you can work with the changes rather than reverting them.
-    * If the changes are in unrelated files, just ignore them and don't revert them.
-- Do not amend a commit unless explicitly requested to do so.
-- While you are working, you might notice unexpected changes that you didn't make. If this happens, STOP IMMEDIATELY and ask the user how they would like to proceed.
-- **NEVER** use destructive commands like `git reset --hard` or `git checkout --` unless specifically requested or approved by the user.
-
-## Plan tool
-
-When using the planning tool:
-- Skip using the planning tool for straightforward tasks (roughly the easiest 25%).
-- Do not make single-step plans.
-- When you made a plan, update it after having performed one of the sub-tasks that you shared on the plan.
-
-## Special user requests
-
-- If the user makes a simple request (such as asking for the time) which you can fulfill by running a terminal command (such as `date`), you should do so.
-- If the user asks for a "review", default to a code review mindset: prioritise identifying bugs, risks, behavioural regressions, and missing tests. Findings must be the primary focus of the response - keep summaries or overviews brief and only after enumerating the issues. Present findings first (ordered by severity with file/line references), follow with open questions or assumptions, and offer a change-summary only as a secondary detail. If no findings are discovered, state that explicitly and mention any residual risks or testing gaps.
-
-## Frontend tasks
-When doing frontend design tasks, avoid collapsing into "AI slop" or safe, average-looking layouts.
-Aim for interfaces that feel intentional, bold, and a bit surprising.
-- Typography: Use expressive, purposeful fonts and avoid default stacks (Inter, Roboto, Arial, system).
-- Color & Look: Choose a clear visual direction; define CSS variables; avoid purple-on-white defaults. No purple bias or dark mode bias.
-- Motion: Use a few meaningful animations (page-load, staggered reveals) instead of generic micro-motions.
-- Background: Don't rely on flat, single-color backgrounds; use gradients, shapes, or subtle patterns to build atmosphere.
-- Overall: Avoid boilerplate layouts and interchangeable UI patterns. Vary themes, type families, and visual languages across outputs.
-- Ensure the page loads properly on both desktop and mobile
-
-Exception: If working within an existing website or design system, preserve the established patterns, structure, and visual language.
-
-## Presenting your work and final message
-
-You are producing plain text that will later be styled by the CLI. Follow these rules exactly. Formatting should make results easy to scan, but not feel mechanical. Use judgment to decide how much structure adds value.
-
-- Default: be very concise; friendly coding teammate tone.
-- Ask only when needed; suggest ideas; mirror the user's style.
-- For substantial work, summarize clearly; follow final-answer formatting.
-- Skip heavy formatting for simple confirmations.
-- Don't dump large files you've written; reference paths only.
-- No "save/copy this file" - User is on the same machine.
-- Offer logical next steps (tests, commits, build) briefly; add verify steps if you couldn't do something.
-- For code changes:
-  * Lead with a quick explanation of the change, and then give more details on the context covering where and why a change was made. Do not start this explanation with "summary", just jump right in.
-  * If there are natural next steps the user may want to take, suggest them at the end of your response. Do not make suggestions if there are no natural next steps.
-  * When suggesting multiple options, use numeric lists for the suggestions so the user can quickly respond with a single number.
-- The user does not command execution outputs. When asked to show the output of a command (e.g. `git show`), relay the important details in your answer or summarize the key lines so the user understands the result.
-
-### Final answer structure and style guidelines
-
-- Plain text; CLI handles styling. Use structure only when it helps scanability.
-- Headers: optional; short Title Case (1-3 words) wrapped in **...**; no blank line before the first bullet; add only if they truly help.
-- Bullets: use - ; merge related points; keep to one line when possible; 4-6 per list ordered by importance; keep phrasing consistent.
-- Monospace: backticks for commands/paths/env vars/code ids and inline examples; use for literal keyword bullets; never combine with **.
-- Code samples or multi-line snippets should be wrapped in fenced code blocks; include an info string as often as possible.
-- Structure: group related bullets; order sections general -> specific -> supporting; for subsections, start with a bolded keyword bullet, then items; match complexity to the task.
-- Tone: collaborative, concise, factual; present tense, active voice; self-contained; no "above/below"; parallel wording.
-- Don'ts: no nested bullets/hierarchies; no ANSI codes; don't cram unrelated keywords; keep keyword lists short--wrap/reformat if long; avoid naming formatting styles in answers.
-- Adaptation: code explanations -> precise, structured with code refs; simple tasks -> lead with outcome; big changes -> logical walkthrough + rationale + next actions; casual one-offs -> plain sentences, no headers/bullets.
-- File References: When referencing files in your response follow the below rules:
-  * Use inline code to make file paths clickable.
-  * Each reference should have a stand alone path. Even if it's the same file.
-  * Accepted: absolute, workspace-relative, a/ or b/ diff prefixes, or bare filename/suffix.
-  * Optionally include line/column (1-based): :line[:column] or #Lline[Ccolumn] (column defaults to 1).
-  * Do not use URIs like file://, vscode://, or https://.
-  * Do not provide range of lines
-  * Examples: src/app.ts, src/app.ts:42, b/server/index.js#L10, C:\\repo\\project\\main.rs:12:5
-"""
+CODEX_CLIENT_VERSION: Final = "0.154.0"
+DEFAULT_USER_AGENT: Final = f"codex_cli_rs/{CODEX_CLIENT_VERSION} (Unknown 0; unknown) unknown"
+_INCLUDE_ADAPTER: Final = TypeAdapter(tuple[str, ...])
 
 
 class ChatGPTAuthError(BaseLLMException):
@@ -196,15 +119,6 @@ def _terminal_user_agent() -> str:
     return "unknown"
 
 
-def _get_litellm_version() -> str:
-    try:
-        from importlib.metadata import version
-
-        return version("litellm")
-    except Exception:
-        return "0.0.0"
-
-
 def get_chatgpt_originator() -> str:
     originator: Final = os.getenv("CHATGPT_ORIGINATOR") or DEFAULT_ORIGINATOR
     return _safe_header_value(originator) or DEFAULT_ORIGINATOR
@@ -214,7 +128,7 @@ def get_chatgpt_user_agent(originator: str) -> str:
     override: Final = os.getenv("CHATGPT_USER_AGENT")
     if override:
         return _safe_header_value(override) or DEFAULT_USER_AGENT
-    version: Final = _get_litellm_version()
+    version: Final = CODEX_CLIENT_VERSION
     os_type: Final = platform.system() or "Unknown"
     os_version: Final = platform.release() or "0"
     arch: Final = platform.machine() or "unknown"
@@ -229,7 +143,7 @@ def get_chatgpt_default_headers(
     access_token: str,
     account_id: str | None,
     session_id: str | None = None,
-) -> dict:
+) -> dict[str, str]:
     originator: Final = get_chatgpt_originator()
     user_agent: Final = get_chatgpt_user_agent(originator)
     headers: Final = {
@@ -240,14 +154,77 @@ def get_chatgpt_default_headers(
         "user-agent": user_agent,
     }
     if session_id:
-        headers["session_id"] = session_id
+        headers["session-id"] = session_id
     if account_id:
         headers["ChatGPT-Account-Id"] = account_id
     return headers
 
 
+def merge_chatgpt_headers(*sources: Mapping[str, str]) -> dict[str, str]:
+    names: Final = {
+        "authorization": "Authorization",
+        "chatgpt-account-id": "ChatGPT-Account-Id",
+        "session_id": "session-id",
+        "thread_id": "thread-id",
+    }
+    return {
+        names.get(key.lower(), key.lower()): value
+        for source in sources
+        for key, value in source.items()
+        if key.lower() not in {"forwarded", "via", "x-api-key"}
+        and not key.lower().startswith(("x-forwarded-", "x-litellm-", "x-stainless-"))
+    }
+
+
+def finalize_chatgpt_request(
+    self: object,
+    headers: Mapping[str, str],
+    optional_params: Mapping[str, object],
+    request_data: Mapping[str, object],
+    api_base: str,
+    api_key: str | None = None,
+    model: str | None = None,
+    stream: bool | None = None,
+    fake_stream: bool | None = None,
+) -> tuple[dict[str, str], bytes | None]:
+    return merge_chatgpt_headers(headers), None
+
+
 def get_chatgpt_default_instructions() -> str:
-    return os.getenv("CHATGPT_DEFAULT_INSTRUCTIONS") or CHATGPT_DEFAULT_INSTRUCTIONS
+    return os.getenv("CHATGPT_DEFAULT_INSTRUCTIONS", "")
+
+
+def normalize_chatgpt_responses_request(request: Mapping[str, object]) -> dict[str, object]:
+    allowed: Final = frozenset(
+        (
+            "model",
+            "input",
+            "instructions",
+            "tools",
+            "tool_choice",
+            "reasoning",
+            "previous_response_id",
+            "truncation",
+            "text",
+            "parallel_tool_calls",
+            "prompt_cache_key",
+            "client_metadata",
+        )
+    )
+    included: Final = _INCLUDE_ADAPTER.validate_python(request.get("include") or ())
+    user_input: Final = request.get("input")
+    return {
+        **{key: value for key, value in request.items() if key in allowed},
+        "input": [{"role": "user", "content": [{"type": "input_text", "text": user_input}]}]
+        if isinstance(user_input, str)
+        else user_input,
+        "instructions": request.get("instructions")
+        if isinstance(request.get("instructions"), str)
+        else get_chatgpt_default_instructions(),
+        "stream": True,
+        "store": False,
+        "include": list(dict.fromkeys((*included, "reasoning.encrypted_content"))),
+    }
 
 
 def _normalize_litellm_params(litellm_params: Any | None) -> dict:

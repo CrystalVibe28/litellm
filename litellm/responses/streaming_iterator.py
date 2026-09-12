@@ -11,6 +11,7 @@ from functools import lru_cache
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final, Literal, Protocol, overload, runtime_checkable
 
+import anyio
 import httpx
 from openai._streaming import SSEDecoder
 from pydantic import BaseModel, ValidationError
@@ -856,7 +857,15 @@ class ResponsesAPIStreamingIterator(BaseResponsesAPIStreamingIterator):
     def __aiter__(self):
         return self
 
+    async def aclose(self) -> None:
+        self.finished = True
+        if not self.response.is_closed:
+            with anyio.CancelScope(shield=True):
+                await self.response.aclose()
+
     async def __anext__(self) -> ResponsesAPIStreamingResponse:
+        if self.finished:
+            raise StopAsyncIteration
         try:
             self._check_max_streaming_duration()
             while True:
@@ -901,6 +910,12 @@ class ResponsesAPIStreamingIterator(BaseResponsesAPIStreamingIterator):
             self.finished = True
             self._handle_failure(e)
             raise e
+        except asyncio.CancelledError:
+            self.finished = True
+            raise
+        finally:
+            if self.finished or self.completed_response is not None:
+                await self.aclose()
 
     def _handle_logging_completed_response(self):
         """Handle logging for completed responses in async context"""
@@ -938,7 +953,14 @@ class SyncResponsesAPIStreamingIterator(BaseResponsesAPIStreamingIterator):
     def __iter__(self):
         return self
 
+    def close(self) -> None:
+        self.finished = True
+        if not self.response.is_closed:
+            self.response.close()
+
     def __next__(self):
+        if self.finished:
+            raise StopIteration
         try:
             self._check_max_streaming_duration()
             while True:
@@ -983,6 +1005,9 @@ class SyncResponsesAPIStreamingIterator(BaseResponsesAPIStreamingIterator):
             self.finished = True
             self._handle_failure(e)
             raise e
+        finally:
+            if self.finished or self.completed_response is not None:
+                self.close()
 
     def _handle_logging_completed_response(self):
         """Handle logging for completed responses in sync context"""
