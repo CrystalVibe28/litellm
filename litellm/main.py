@@ -602,10 +602,14 @@ async def acompletion(
         "enable_json_schema_validation": enable_json_schema_validation,
     }
     if custom_llm_provider is None:
-        _, custom_llm_provider, _, _ = get_llm_provider(
-            model=model,
-            custom_llm_provider=custom_llm_provider,
-            api_base=kwargs.get("api_base") or base_url,
+        _, custom_llm_provider, _, _ = (
+            await asyncio.to_thread(get_llm_provider, model=model, api_base=kwargs.get("api_base") or base_url)
+            if model.startswith("chatgpt/")
+            else get_llm_provider(
+                model=model,
+                custom_llm_provider=custom_llm_provider,
+                api_base=kwargs.get("api_base") or base_url,
+            )
         )
 
     fallbacks = fallbacks or litellm.model_fallbacks

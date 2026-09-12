@@ -2685,12 +2685,14 @@ class BaseLLMHTTPHandler:
             sync_httpx_client = client
 
         headers = responses_api_provider_config.validate_environment(
-            headers=response_api_optional_request_params.get("extra_headers", {}) or {},
+            headers={**(response_api_optional_request_params.get("extra_headers") or {}), **(extra_headers or {})}
+            if custom_llm_provider == "chatgpt"
+            else response_api_optional_request_params.get("extra_headers", {}) or {},
             model=model,
             litellm_params=litellm_params,
         )
 
-        if extra_headers:
+        if extra_headers and custom_llm_provider != "chatgpt":
             headers.update(extra_headers)
 
         # Check if streaming is requested
@@ -2712,7 +2714,11 @@ class BaseLLMHTTPHandler:
 
         if extra_body:
             data.update(extra_body)
-        stream = bool(stream or data.get("stream"))
+        if custom_llm_provider == "chatgpt":
+            from litellm.llms.chatgpt.common_utils import normalize_chatgpt_responses_request
+
+            data = normalize_chatgpt_responses_request(data)
+        stream = bool(stream or (custom_llm_provider != "chatgpt" and data.get("stream")))
 
         # Preserve the OpenAI-style request context (not sent to the provider) for streaming
         # hooks/metadata; the streaming iterator now consumes this to run deployment hooks
@@ -2872,13 +2878,22 @@ class BaseLLMHTTPHandler:
         else:
             async_httpx_client = client
 
-        headers = responses_api_provider_config.validate_environment(
-            headers=response_api_optional_request_params.get("extra_headers", {}) or {},
-            model=model,
-            litellm_params=litellm_params,
+        headers = (
+            await asyncio.to_thread(
+                responses_api_provider_config.validate_environment,
+                headers={**(response_api_optional_request_params.get("extra_headers") or {}), **(extra_headers or {})},
+                model=model,
+                litellm_params=litellm_params,
+            )
+            if custom_llm_provider == "chatgpt"
+            else responses_api_provider_config.validate_environment(
+                headers=response_api_optional_request_params.get("extra_headers", {}) or {},
+                model=model,
+                litellm_params=litellm_params,
+            )
         )
 
-        if extra_headers:
+        if extra_headers and custom_llm_provider != "chatgpt":
             headers.update(extra_headers)
 
         # Check if streaming is requested
@@ -2900,7 +2915,11 @@ class BaseLLMHTTPHandler:
 
         if extra_body:
             data.update(extra_body)
-        stream = bool(stream or data.get("stream"))
+        if custom_llm_provider == "chatgpt":
+            from litellm.llms.chatgpt.common_utils import normalize_chatgpt_responses_request
+
+            data = normalize_chatgpt_responses_request(data)
+        stream = bool(stream or (custom_llm_provider != "chatgpt" and data.get("stream")))
 
         # Preserve the OpenAI-style request context (not sent to the provider) for streaming
         # hooks/metadata; the streaming iterator now consumes this to run deployment hooks

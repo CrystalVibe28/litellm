@@ -128,9 +128,7 @@ def test_chatgpt_image_generation_only_supports_prompt_output_format_and_size():
 def test_chatgpt_image_generation_rejects_unsupported_optional_params():
     config = ChatGPTImageGenerationConfig()
 
-    with pytest.raises(
-        ValueError, match="Parameters \\['quality'\\] are not supported"
-    ):
+    with pytest.raises(ValueError, match="Parameters \\['quality'\\] are not supported"):
         config.transform_image_generation_request(
             model="gpt-image-2",
             prompt="draw a cat",
@@ -184,7 +182,12 @@ def test_chatgpt_image_generation_validates_environment():
     config.authenticator = cast(Any, FakeAuthenticator())
 
     headers = config.validate_environment(
-        headers={"content-type": "application/custom", "x-extra": "1"},
+        headers={
+            "content-type": "application/custom",
+            "x-extra": "1",
+            "authorization": "Bearer downstream",
+            "CHATGPT-ACCOUNT-ID": "downstream-account",
+        },
         model="gpt-image-2",
         messages=[],
         optional_params={},
@@ -193,7 +196,7 @@ def test_chatgpt_image_generation_validates_environment():
 
     assert headers["Authorization"] == "Bearer access-token"
     assert headers["ChatGPT-Account-Id"] == "account-id"
-    assert headers["session_id"] == "session-123"
+    assert headers["session-id"] == "session-123"
     assert headers["content-type"] == "application/custom"
     assert headers["x-extra"] == "1"
 
@@ -234,9 +237,7 @@ def test_chatgpt_image_generation_validate_environment_auth_error():
         ),
     ],
 )
-def test_chatgpt_image_generation_get_complete_url_canonicalizes_server_api_base(
-    server_api_base, expected
-):
+def test_chatgpt_image_generation_get_complete_url_canonicalizes_server_api_base(server_api_base, expected):
     config = ChatGPTImageGenerationConfig()
 
     class FakeAuthenticator:
@@ -342,9 +343,7 @@ def test_chatgpt_image_generation_uses_optional_responses_model():
         ("gpt-image-2", {"size": "bad-size"}, None),
     ],
 )
-def test_chatgpt_image_generation_validates_additional_param_paths(
-    model, optional_params, error
-):
+def test_chatgpt_image_generation_validates_additional_param_paths(model, optional_params, error):
     config = ChatGPTImageGenerationConfig()
 
     if error is None:
