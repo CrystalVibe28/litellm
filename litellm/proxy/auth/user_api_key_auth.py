@@ -2722,7 +2722,7 @@ async def _noop_none() -> None:
 def _apply_internal_user_header_mapping_for_auth(
     user_api_key_auth_obj: UserAPIKeyAuth,
     request: Request,
-    general_settings: Optional[dict],
+    general_settings: dict | None,
     route: str,
 ) -> bool:
     if user_api_key_auth_obj.user_role in (
