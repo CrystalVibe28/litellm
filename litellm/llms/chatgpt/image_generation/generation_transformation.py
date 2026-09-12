@@ -52,7 +52,7 @@ class ChatGPTImageGenerationConfig(BaseImageGenerationConfig):
     Bridge OpenAI-style Images API calls to ChatGPT/Codex Responses image generation.
     """
 
-    sign_request = staticmethod(finalize_chatgpt_request)
+    sign_request = finalize_chatgpt_request
 
     def __init__(self) -> None:
         self.authenticator = Authenticator()

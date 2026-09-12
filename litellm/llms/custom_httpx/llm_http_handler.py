@@ -2878,12 +2878,19 @@ class BaseLLMHTTPHandler:
         else:
             async_httpx_client = client
 
-        headers = responses_api_provider_config.validate_environment(
-            headers={**(response_api_optional_request_params.get("extra_headers") or {}), **(extra_headers or {})}
+        headers = (
+            await asyncio.to_thread(
+                responses_api_provider_config.validate_environment,
+                headers={**(response_api_optional_request_params.get("extra_headers") or {}), **(extra_headers or {})},
+                model=model,
+                litellm_params=litellm_params,
+            )
             if custom_llm_provider == "chatgpt"
-            else response_api_optional_request_params.get("extra_headers", {}) or {},
-            model=model,
-            litellm_params=litellm_params,
+            else responses_api_provider_config.validate_environment(
+                headers=response_api_optional_request_params.get("extra_headers", {}) or {},
+                model=model,
+                litellm_params=litellm_params,
+            )
         )
 
         if extra_headers and custom_llm_provider != "chatgpt":

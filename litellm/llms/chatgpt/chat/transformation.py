@@ -16,7 +16,7 @@ from .streaming_utils import ChatGPTToolCallNormalizer
 
 
 class ChatGPTConfig(OpenAIConfig):
-    sign_request = staticmethod(finalize_chatgpt_request)
+    sign_request = finalize_chatgpt_request
 
     def __init__(
         self,

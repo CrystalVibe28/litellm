@@ -9,6 +9,7 @@ from typing import Any, Final
 from uuid import uuid4
 
 import httpx
+from pydantic import TypeAdapter
 
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 
@@ -24,6 +25,7 @@ CHATGPT_CLIENT_ID: Final = "app_EMoamEEZ73f0CkXaXp7hrann"
 DEFAULT_ORIGINATOR: Final = "codex_cli_rs"
 CODEX_CLIENT_VERSION: Final = "0.154.0"
 DEFAULT_USER_AGENT: Final = f"codex_cli_rs/{CODEX_CLIENT_VERSION} (Unknown 0; unknown) unknown"
+_INCLUDE_ADAPTER: Final = TypeAdapter(tuple[str, ...])
 
 
 class ChatGPTAuthError(BaseLLMException):
@@ -141,7 +143,7 @@ def get_chatgpt_default_headers(
     access_token: str,
     account_id: str | None,
     session_id: str | None = None,
-) -> dict:
+) -> dict[str, str]:
     originator: Final = get_chatgpt_originator()
     user_agent: Final = get_chatgpt_user_agent(originator)
     headers: Final = {
@@ -175,6 +177,7 @@ def merge_chatgpt_headers(*sources: Mapping[str, str]) -> dict[str, str]:
 
 
 def finalize_chatgpt_request(
+    self: object,
     headers: Mapping[str, str],
     optional_params: Mapping[str, object],
     request_data: Mapping[str, object],
@@ -184,7 +187,7 @@ def finalize_chatgpt_request(
     stream: bool | None = None,
     fake_stream: bool | None = None,
 ) -> tuple[dict[str, str], bytes | None]:
-    return merge_chatgpt_headers(headers, {"Authorization": f"Bearer {api_key}"} if api_key else {}), None
+    return merge_chatgpt_headers(headers), None
 
 
 def get_chatgpt_default_instructions() -> str:
@@ -208,12 +211,13 @@ def normalize_chatgpt_responses_request(request: Mapping[str, object]) -> dict[s
             "client_metadata",
         )
     )
-    include: Final = request.get("include")
-    included: Final = (
-        tuple(item for item in include if isinstance(item, str)) if isinstance(include, (list, tuple)) else ()
-    )
+    included: Final = _INCLUDE_ADAPTER.validate_python(request.get("include") or ())
+    user_input: Final = request.get("input")
     return {
         **{key: value for key, value in request.items() if key in allowed},
+        "input": [{"role": "user", "content": [{"type": "input_text", "text": user_input}]}]
+        if isinstance(user_input, str)
+        else user_input,
         "instructions": request.get("instructions")
         if isinstance(request.get("instructions"), str)
         else get_chatgpt_default_instructions(),
