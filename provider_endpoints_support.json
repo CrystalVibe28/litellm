@@ -2874,6 +2874,15 @@
         "responses": true
       }
     },
+    "opencode_go": {
+      "display_name": "OpenCode Go (`opencode_go`)",
+      "url": "https://docs.litellm.ai/docs/providers/opencode_go",
+      "endpoints": {
+        "chat_completions": true,
+        "messages": true,
+        "responses": true
+      }
+    },
     "pg_vector": {
       "display_name": "PG Vector (`pg_vector`)",
       "url": "https://docs.litellm.ai/docs/providers/pg_vector",
