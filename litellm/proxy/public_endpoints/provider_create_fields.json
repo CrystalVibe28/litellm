@@ -1992,6 +1992,34 @@
     "default_model_placeholder": "gpt-3.5-turbo"
   },
   {
+    "provider": "OPENCODE_GO",
+    "provider_display_name": "OpenCode Go",
+    "litellm_provider": "opencode_go",
+    "credential_fields": [
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": "your-opencode-api-key",
+        "tooltip": "OpenCode Go API Key from https://opencode.ai/auth",
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_base",
+        "label": "API Base URL",
+        "placeholder": "https://opencode.ai/zen/go/v1",
+        "tooltip": "Defaults to https://opencode.ai/zen/go/v1",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://opencode.ai/zen/go/v1"
+      }
+    ],
+    "default_model_placeholder": "opencode_go/glm-5.3"
+  },
+  {
     "provider": "MINIMAX",
     "provider_display_name": "MiniMax",
     "litellm_provider": "minimax",

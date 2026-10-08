@@ -700,6 +700,7 @@ stability_models: Set = set()
 github_copilot_models: Set = set()
 chatgpt_models: Set = set()
 minimax_models: Set = set()
+opencode_go_models: set[str] = set()  # mutable-ok: filled by add_known_models like its siblings
 aws_polly_models: Set = set()
 gigachat_models: Set = set()
 llamagate_models: Set = set()
@@ -978,6 +979,8 @@ def _populate_provider_model_sets(model_cost_map: Dict) -> None:
             chatgpt_models.add(key)
         elif value.get("litellm_provider") == "minimax":
             minimax_models.add(key)
+        elif value.get("litellm_provider") == "opencode_go":
+            opencode_go_models.add(key)
         elif value.get("litellm_provider") == "aws_polly":
             aws_polly_models.add(key)
         elif value.get("litellm_provider") == "gigachat":
@@ -1226,6 +1229,7 @@ def _build_models_by_provider() -> dict:
         "github_copilot": github_copilot_models,
         "chatgpt": chatgpt_models,
         "minimax": minimax_models,
+        "opencode_go": opencode_go_models,
         "aws_polly": aws_polly_models,
         "gigachat": gigachat_models,
         "llamagate": llamagate_models,
@@ -1543,6 +1547,7 @@ if TYPE_CHECKING:
     )
     from .llms.empower.chat.transformation import EmpowerChatConfig as EmpowerChatConfig
     from .llms.minimax.chat.transformation import MinimaxChatConfig as MinimaxChatConfig
+    from .llms.opencode_go.chat.transformation import OpenCodeGoChatConfig as OpenCodeGoChatConfig
     from .llms.aiohttp_openai.chat.transformation import (
         AiohttpOpenAIChatConfig as AiohttpOpenAIChatConfig,
     )

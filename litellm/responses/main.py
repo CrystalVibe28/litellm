@@ -18,6 +18,7 @@ from litellm.constants import request_timeout
 from litellm.integrations.anthropic_cache_control_hook import CARRY_UNMATCHED_MESSAGE_POINTS
 from litellm.litellm_core_utils.asyncify import run_async_function
 from litellm.litellm_core_utils.core_helpers import normalize_drop_params
+from litellm.litellm_core_utils.get_provider_specific_headers import ProviderSpecificHeaderUtils
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
 from litellm.litellm_core_utils.prompt_templates.common_utils import (
     update_responses_input_with_model_file_ids,
@@ -1137,6 +1138,17 @@ def responses(
             litellm_params=litellm_params,
             local_vars=local_vars,
         )
+
+        provider_specific_headers: Final = ProviderSpecificHeaderUtils.get_provider_specific_headers(
+            provider_specific_header=kwargs.get("provider_specific_header"),
+            custom_llm_provider=custom_llm_provider,
+        )
+        if provider_specific_headers:
+            extra_headers = ResponsesAPIRequestUtils.merge_client_forwarded_headers(  # rebind-ok: mirrors the forwarded-header merge above
+                extra_headers=provider_specific_headers,
+                client_headers=extra_headers,
+            )
+            local_vars["extra_headers"] = extra_headers
 
         #########################################################
         # Update input and tools with provider-specific file IDs if managed files are used
