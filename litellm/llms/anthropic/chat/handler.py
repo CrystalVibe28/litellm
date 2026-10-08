@@ -459,8 +459,9 @@ class AnthropicChatCompletion(BaseLLM):
         # before transforming: whichever path runs emits pre_call exactly once.
         # `get_config` merges the class-level defaults (Anthropic's required
         # `max_tokens` among them) that `transform_request` would have applied.
+        config_class: Final = type(config) if isinstance(config, AnthropicConfig) else AnthropicConfig
         rust_optional_params: Final = {  # mutable-ok: json.dumps in the bridge rejects a mappingproxy
-            **AnthropicConfig.get_config(model=model),
+            **config_class.get_config(model=model),
             **optional_params,
         }
         serves_via_rust: Final = rust_chat_completions_accepts(

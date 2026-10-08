@@ -327,6 +327,9 @@ def get_llm_provider(
                     ):
                         custom_llm_provider = "minimax"
                         dynamic_api_key = get_secret_str("MINIMAX_API_KEY")
+                    elif endpoint == "opencode.ai/zen/go/v1":
+                        custom_llm_provider = "opencode_go"  # rebind-ok: mirrors the sibling endpoint branches
+                        dynamic_api_key = get_secret_str("OPENCODE_GO_API_KEY") or get_secret_str("OPENCODE_API_KEY")
                     elif endpoint == "platform.publicai.co/v1":
                         custom_llm_provider = "publicai"
                         dynamic_api_key = get_secret_str("PUBLICAI_API_KEY")
@@ -732,6 +735,11 @@ def _get_openai_compatible_provider_info(
             api_base,
             dynamic_api_key,
         ) = litellm.XAIChatConfig()._get_openai_compatible_provider_info(api_base, api_key)
+    elif custom_llm_provider == "opencode_go":
+        (
+            api_base,  # rebind-ok: mirrors the sibling provider branches
+            dynamic_api_key,  # rebind-ok: mirrors the sibling provider branches
+        ) = litellm.OpenCodeGoChatConfig()._get_openai_compatible_provider_info(api_base, api_key)
     elif custom_llm_provider == "zai":
         (
             api_base,

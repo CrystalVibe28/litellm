@@ -203,6 +203,7 @@ else:
     LiteLLMLoggingObj = Any
 
 _ResponseT = TypeVar("_ResponseT")
+_PROVIDERS_VALIDATING_MERGED_RESPONSES_HEADERS: Final = frozenset({"chatgpt", "opencode_go"})
 
 
 class _DeleteRequestKwargs(TypedDict, total=False):
@@ -2686,13 +2687,13 @@ class BaseLLMHTTPHandler:
 
         headers = responses_api_provider_config.validate_environment(
             headers={**(response_api_optional_request_params.get("extra_headers") or {}), **(extra_headers or {})}
-            if custom_llm_provider == "chatgpt"
+            if custom_llm_provider in _PROVIDERS_VALIDATING_MERGED_RESPONSES_HEADERS
             else response_api_optional_request_params.get("extra_headers", {}) or {},
             model=model,
             litellm_params=litellm_params,
         )
 
-        if extra_headers and custom_llm_provider != "chatgpt":
+        if extra_headers and custom_llm_provider not in _PROVIDERS_VALIDATING_MERGED_RESPONSES_HEADERS:
             headers.update(extra_headers)
 
         # Check if streaming is requested
@@ -2885,7 +2886,7 @@ class BaseLLMHTTPHandler:
                 model=model,
                 litellm_params=litellm_params,
             )
-            if custom_llm_provider == "chatgpt"
+            if custom_llm_provider in _PROVIDERS_VALIDATING_MERGED_RESPONSES_HEADERS
             else responses_api_provider_config.validate_environment(
                 headers=response_api_optional_request_params.get("extra_headers", {}) or {},
                 model=model,
@@ -2893,7 +2894,7 @@ class BaseLLMHTTPHandler:
             )
         )
 
-        if extra_headers and custom_llm_provider != "chatgpt":
+        if extra_headers and custom_llm_provider not in _PROVIDERS_VALIDATING_MERGED_RESPONSES_HEADERS:
             headers.update(extra_headers)
 
         # Check if streaming is requested

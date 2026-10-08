@@ -8073,6 +8073,10 @@ class ProviderConfigManager:
             LlmProviders.WATSONX_TEXT: (lambda: litellm.IBMWatsonXAIConfig(), False),
             LlmProviders.EMPOWER: (lambda: litellm.EmpowerChatConfig(), False),
             LlmProviders.MINIMAX: (lambda: litellm.MinimaxChatConfig(), False),
+            LlmProviders.OPENCODE_GO: (
+                lambda model: ProviderConfigManager._get_opencode_go_chat_config(model),
+                True,
+            ),
             LlmProviders.GITHUB: (lambda: litellm.GithubChatConfig(), False),
             LlmProviders.COMPACTIFAI: (lambda: litellm.CompactifAIChatConfig(), False),
             LlmProviders.GITHUB_COPILOT: (lambda: litellm.GithubCopilotConfig(), False),
@@ -8200,6 +8204,12 @@ class ProviderConfigManager:
         from litellm.llms.azure_ai.common_utils import AzureFoundryModelInfo
 
         return AzureFoundryModelInfo.get_azure_ai_config_for_model(model)
+
+    @staticmethod
+    def _get_opencode_go_chat_config(model: str) -> BaseConfig:
+        from litellm.llms.opencode_go.chat.transformation import get_opencode_go_chat_config
+
+        return get_opencode_go_chat_config(model)
 
     @staticmethod
     def _get_vertex_ai_config(model: str) -> BaseConfig:
@@ -8494,6 +8504,11 @@ class ProviderConfigManager:
             )
 
             return MinimaxMessagesConfig()
+        elif litellm.LlmProviders.OPENCODE_GO == provider:
+            from litellm.llms.opencode_go.common_utils import get_opencode_go_api_format
+            from litellm.llms.opencode_go.messages.transformation import OpenCodeGoMessagesConfig
+
+            return OpenCodeGoMessagesConfig() if get_opencode_go_api_format(model) == "messages" else None
         elif litellm.LlmProviders.DEEPSEEK == provider:
             from litellm.llms.deepseek.messages.transformation import (
                 DeepSeekAnthropicMessagesConfig,
@@ -8680,6 +8695,13 @@ class ProviderConfigManager:
                 return litellm.AzureOpenAIResponsesAPIConfig()
         elif litellm.LlmProviders.XAI == provider:
             return litellm.XAIResponsesAPIConfig()
+        elif litellm.LlmProviders.OPENCODE_GO == provider:
+            from litellm.llms.opencode_go.common_utils import get_opencode_go_api_format
+            from litellm.llms.opencode_go.responses.transformation import OpenCodeGoResponsesAPIConfig
+
+            if not model or get_opencode_go_api_format(model) != "responses":
+                return None
+            return OpenCodeGoResponsesAPIConfig()
         elif litellm.LlmProviders.GITHUB_COPILOT == provider:
             from litellm.llms.github_copilot.responses.transformation import (
                 github_copilot_supports_responses_api,
