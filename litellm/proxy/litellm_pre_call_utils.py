@@ -159,6 +159,7 @@ def _sanitize_for_log(value: object) -> str:
     return text.replace("\r", "").replace("\n", "")
 
 
+from litellm.llms.opencode_go.common_utils import OPENCODE_GO_SESSION_HEADER
 from litellm.router import Router
 from litellm.secret_managers.main import get_secret_bool
 from litellm.types.llms.anthropic import ANTHROPIC_API_HEADERS
@@ -3400,6 +3401,7 @@ _ANTHROPIC_API_HEADER_PROVIDERS: Final = ",".join(
     (LlmProviders.ANTHROPIC.value, LlmProviders.BEDROCK.value, LlmProviders.VERTEX_AI.value)
 )
 _ANTHROPIC_OAUTH_CREDENTIAL_PROVIDERS: Final = LlmProviders.ANTHROPIC.value
+_OPENCODE_GO_SESSION_PROVIDERS: Final = LlmProviders.OPENCODE_GO.value
 
 
 def add_provider_specific_headers_to_request(
@@ -3415,11 +3417,16 @@ def add_provider_specific_headers_to_request(
         if header.lower() == "authorization" and is_anthropic_oauth_key(value)
     }
 
+    opencode_go_session_headers: Final = {  # mutable-ok: ProviderSpecificHeader.extra_headers is a plain dict
+        header: value for header, value in headers.items() if header.lower() == OPENCODE_GO_SESSION_HEADER
+    }
+
     scoped_headers: Final = [
         ProviderSpecificHeader(custom_llm_provider=providers, extra_headers=extra_headers)
         for providers, extra_headers in (
             (_ANTHROPIC_API_HEADER_PROVIDERS, anthropic_api_headers),
             (_ANTHROPIC_OAUTH_CREDENTIAL_PROVIDERS, anthropic_oauth_credential_headers),
+            (_OPENCODE_GO_SESSION_PROVIDERS, opencode_go_session_headers),
         )
         if extra_headers
     ]

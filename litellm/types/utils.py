@@ -3992,6 +3992,7 @@ class LlmProviders(str, Enum):
     LANGGRAPH = "langgraph"
     LANGFLOW = "langflow"
     MINIMAX = "minimax"
+    OPENCODE_GO = "opencode_go"
     SYNTHETIC = "synthetic"
     APERTIS = "apertis"
     NANOGPT = "nano-gpt"

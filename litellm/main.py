@@ -108,6 +108,12 @@ from litellm.llms.cohere.common_utils import CohereModelInfo
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.llms.openai.chat.gpt_5_transformation import OpenAIGPT5Config
 from litellm.llms.openai_like.json_loader import JSONProviderRegistry
+from litellm.llms.opencode_go.common_utils import (
+    get_opencode_go_api_base,
+    get_opencode_go_api_format,
+    get_opencode_go_api_key,
+    with_opencode_go_session_header,
+)
 from litellm.llms.vertex_ai.common_utils import (
     VertexAIModelRoute,
     get_vertex_ai_model_route,
@@ -1046,6 +1052,9 @@ def responses_api_bridge_check(
 
     except Exception as e:
         verbose_logger.debug("Error getting model info: %s", e)
+
+        if custom_llm_provider == "opencode_go" and get_opencode_go_api_format(model) == "responses":
+            model_info["mode"] = "responses"
 
         if model.startswith("responses/"):  # handle azure models - `azure/responses/<deployment-name>`
             model = model.replace("responses/", "")
@@ -2454,6 +2463,58 @@ def _complete_minimax(ctx: _CompletionDispatchContext) -> _CompletionDispatchRes
         provider_config=provider_config,
     )
     logging.post_call(input=messages, api_key=api_key, original_response=response)
+
+    return response
+
+
+def _complete_opencode_go(ctx: _CompletionDispatchContext) -> _CompletionDispatchResult:
+    client: Final = _dispatch_client_http(ctx)
+    api_key: Final = get_opencode_go_api_key(ctx.api_key) or litellm.api_key
+    api_base: Final = get_opencode_go_api_base(ctx.api_base or litellm.api_base)
+
+    if get_opencode_go_api_format(ctx.model) == "messages":
+        messages_response: Final = anthropic_chat_completions.completion(
+            model=ctx.model,
+            messages=ctx.messages,
+            api_base=f"{api_base.removesuffix('/messages')}/messages",
+            acompletion=ctx.acompletion,
+            custom_prompt_dict=litellm.custom_prompt_dict,
+            model_response=ctx.model_response,
+            print_verbose=print_verbose,
+            optional_params=ctx.optional_params,
+            litellm_params=ctx.litellm_params,
+            logger_fn=ctx.logger_fn,
+            encoding=_get_encoding(),
+            api_key=api_key,
+            logging_obj=ctx.logging,
+            headers=with_opencode_go_session_header(headers=ctx.headers, litellm_params=ctx.litellm_params),
+            timeout=ctx.timeout,
+            client=client,
+            custom_llm_provider=ctx.custom_llm_provider,
+        )
+        ctx.logging.post_call(input=ctx.messages, api_key=api_key, original_response=messages_response)
+        return messages_response
+
+    response: Final = base_llm_http_handler.completion(
+        model=ctx.model,
+        messages=ctx.messages,
+        api_base=api_base,
+        custom_llm_provider=ctx.custom_llm_provider,
+        model_response=ctx.model_response,
+        encoding=_get_encoding(),
+        logging_obj=ctx.logging,
+        optional_params=ctx.optional_params,
+        timeout=ctx.timeout,
+        litellm_params=ctx.litellm_params,
+        shared_session=ctx.shared_session,
+        acompletion=ctx.acompletion,
+        stream=ctx.stream,
+        api_key=api_key,
+        headers=ctx.headers,
+        client=client,
+        provider_config=ctx.provider_config,
+    )
+    ctx.logging.post_call(input=ctx.messages, api_key=api_key, original_response=response)
 
     return response
 
@@ -5709,6 +5770,8 @@ def completion(
             response = _complete_cometapi(_dispatch_ctx)
         elif custom_llm_provider == "minimax":
             response = _complete_minimax(_dispatch_ctx)
+        elif custom_llm_provider == "opencode_go":
+            response = _complete_opencode_go(_dispatch_ctx)  # rebind-ok: mirrors the sibling dispatch branches
         elif custom_llm_provider == "hosted_vllm":
             response = _complete_hosted_vllm(_dispatch_ctx)
         elif (

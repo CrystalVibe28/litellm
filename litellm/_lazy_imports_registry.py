@@ -125,6 +125,7 @@ LLM_CONFIG_NAMES: Final = (
     "CompactifAIChatConfig",
     "EmpowerChatConfig",
     "MinimaxChatConfig",
+    "OpenCodeGoChatConfig",
     "AiohttpOpenAIChatConfig",
     "HuggingFaceChatConfig",
     "HuggingFaceEmbeddingConfig",
@@ -611,6 +612,7 @@ _LLM_CONFIGS_IMPORT_MAP: Final = {
     ),
     "EmpowerChatConfig": (".llms.empower.chat.transformation", "EmpowerChatConfig"),
     "MinimaxChatConfig": (".llms.minimax.chat.transformation", "MinimaxChatConfig"),
+    "OpenCodeGoChatConfig": (".llms.opencode_go.chat.transformation", "OpenCodeGoChatConfig"),
     "AiohttpOpenAIChatConfig": (
         ".llms.aiohttp_openai.chat.transformation",
         "AiohttpOpenAIChatConfig",
