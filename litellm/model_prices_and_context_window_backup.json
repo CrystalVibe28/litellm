@@ -64578,7 +64578,16 @@
         "supports_vision": true,
         "supports_pdf_input": true,
         "supports_audio_input": false,
-        "supports_video_input": false
+        "supports_video_input": false,
+        "supports_adaptive_thinking": true,
+        "supports_output_config": true,
+        "supports_sampling_params": false,
+        "supports_assistant_prefill": false,
+        "supports_xhigh_reasoning_effort": true,
+        "supports_max_reasoning_effort": true,
+        "supports_native_structured_output": true,
+        "supports_forced_tool_use": true,
+        "thinking_always_on": false
     },
     "opencode_go/deepseek-v4-flash": {
         "litellm_provider": "opencode_go",

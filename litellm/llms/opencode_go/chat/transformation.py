@@ -1,3 +1,12 @@
+from collections.abc import Coroutine
+from typing import (  # noqa: TID251  # the _transform_messages override must mirror the legacy base signature
+    Any,
+    Final,
+    Literal,
+    cast,
+    overload,
+)
+
 from litellm.constants import DEFAULT_ANTHROPIC_CHAT_MAX_TOKENS
 from litellm.llms.anthropic.chat.transformation import AnthropicConfig
 from litellm.llms.openai.chat.gpt_transformation import OpenAIGPTConfig
@@ -11,10 +20,57 @@ from litellm.types.llms.openai import AllMessageValues
 from litellm.utils import get_max_tokens
 
 
+def _with_text_parts_as_string(message: AllMessageValues) -> AllMessageValues:
+    content: Final = message.get("content")
+    if not isinstance(content, list) or not content:
+        return message
+    if any(not isinstance(part, dict) or part.get("type") != "text" for part in content):
+        return message
+    text: Final = "\n".join(str(part.get("text") or "") for part in content)
+    flattened: Final = {**message, "content": text}  # mutable-ok: wire messages are plain JSON dicts
+    return cast(AllMessageValues, flattened)  # cast-ok: TypedDict spread narrows to dict
+
+
 class OpenCodeGoChatConfig(OpenAIGPTConfig):
     @property
     def custom_llm_provider(self) -> str | None:
         return "opencode_go"
+
+    def get_supported_openai_params(self, model: str) -> list:  # mutable-ok: inherited contract
+        return [*super().get_supported_openai_params(model), "reasoning_effort"]  # mutable-ok: inherited contract
+
+    @overload
+    def _transform_messages(
+        self,
+        messages: list[AllMessageValues],  # mutable-ok: mirrors the base override signature
+        model: str,
+        is_async: Literal[True],
+    ) -> Coroutine[Any, Any, list[AllMessageValues]]: ...  # mutable-ok: mirrors the base override signature
+
+    @overload
+    def _transform_messages(
+        self,
+        messages: list[AllMessageValues],  # mutable-ok: mirrors the base override signature
+        model: str,
+        is_async: Literal[False] = False,
+    ) -> list[AllMessageValues]: ...  # mutable-ok: mirrors the base override signature
+
+    def _transform_messages(
+        self,
+        messages: list[AllMessageValues],  # mutable-ok: mirrors the base override signature
+        model: str,
+        is_async: bool = False,
+    ) -> (
+        list[AllMessageValues] | Coroutine[Any, Any, list[AllMessageValues]]  # mutable-ok: mirrors the base signature
+    ):
+        # Some OpenCode Go backends silently drop a message whose content is an array of text
+        # parts (seen on deepseek-v4.1-flash, 2026-10-12), so text-only arrays are sent as strings.
+        flattened: Final = [  # mutable-ok: the base transform mutates the wire message list
+            _with_text_parts_as_string(message) for message in messages
+        ]
+        if is_async:
+            return super()._transform_messages(messages=flattened, model=model, is_async=True)
+        return super()._transform_messages(messages=flattened, model=model, is_async=False)
 
     def _get_openai_compatible_provider_info(
         self, api_base: str | None, api_key: str | None

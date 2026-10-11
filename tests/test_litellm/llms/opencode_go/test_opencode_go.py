@@ -74,6 +74,9 @@ def opencode_go_models(monkeypatch):
         )
     monkeypatch.delenv("OPENCODE_GO_API_BASE", raising=False)
     ProviderConfigManager._get_provider_anthropic_messages_config_cached.cache_clear()
+    litellm.utils._cached_get_model_info.cache_clear()
+    yield
+    litellm.utils._cached_get_model_info.cache_clear()
 
 
 def _complete(model: str, **kwargs) -> tuple[httpx.Request, str]:
@@ -86,11 +89,13 @@ def _complete(model: str, **kwargs) -> tuple[httpx.Request, str]:
     client = HTTPHandler()
     client.client = httpx.Client(transport=httpx.MockTransport(upstream))
     response = litellm.completion(
-        model=f"opencode_go/{model}",
-        messages=[{"role": "user", "content": "ping"}],
-        api_key="sk-opencode",
-        client=client,
-        **kwargs,
+        **{
+            "model": f"opencode_go/{model}",
+            "messages": [{"role": "user", "content": "ping"}],
+            "api_key": "sk-opencode",
+            "client": client,
+            **kwargs,
+        }
     )
     assert len(requests) == 1
     return requests[0], response.choices[0].message.content
@@ -114,6 +119,50 @@ def test_completion_translates_to_the_models_native_endpoint(model, path, auth_h
     assert body["model"] == model
     assert body_key in body
     assert content == "pong"
+
+
+def test_chat_format_sends_text_only_content_arrays_as_strings():
+    image_content = [
+        {"type": "text", "text": "describe"},
+        {"type": "image_url", "image_url": {"url": "https://example.com/cat.png"}},
+    ]
+
+    request, _ = _complete(
+        CHAT_MODEL,
+        messages=[
+            {"role": "system", "content": [{"type": "text", "text": "first"}, {"type": "text", "text": "second"}]},
+            {"role": "user", "content": [{"type": "text", "text": "ping"}]},
+            {"role": "user", "content": image_content},
+        ],
+    )
+
+    sent = json.loads(request.content)["messages"]
+    assert [message["content"] for message in sent] == ["first\nsecond", "ping", image_content]
+
+
+def test_chat_format_forwards_reasoning_effort():
+    request, _ = _complete(CHAT_MODEL, reasoning_effort="low")
+
+    assert json.loads(request.content)["reasoning_effort"] == "low"
+
+
+def test_messages_format_uses_adaptive_thinking_for_models_flagged_in_the_cost_map(monkeypatch):
+    monkeypatch.setitem(
+        litellm.model_cost,
+        f"opencode_go/{MESSAGES_MODEL}",
+        {
+            **litellm.model_cost[f"opencode_go/{MESSAGES_MODEL}"],
+            "supports_reasoning": True,
+            "supports_adaptive_thinking": True,
+            "supports_output_config": True,
+        },
+    )
+
+    request, _ = _complete(MESSAGES_MODEL, reasoning_effort="low", max_tokens=4096)
+
+    body = json.loads(request.content)
+    assert body["thinking"]["type"] == "adaptive"
+    assert body["output_config"]["effort"] == "low"
 
 
 @pytest.mark.parametrize("model", [CHAT_MODEL, MESSAGES_MODEL, RESPONSES_MODEL])
