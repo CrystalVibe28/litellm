@@ -3993,6 +3993,7 @@ class LlmProviders(str, Enum):
     LANGFLOW = "langflow"
     MINIMAX = "minimax"
     OPENCODE_GO = "opencode_go"
+    COMMAND_CODE = "command_code"
     SYNTHETIC = "synthetic"
     APERTIS = "apertis"
     NANOGPT = "nano-gpt"
