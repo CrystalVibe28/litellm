@@ -105,6 +105,12 @@ from litellm.llms.base_llm.base_model_iterator import (
 )
 from litellm.llms.bedrock.common_utils import BedrockModelInfo
 from litellm.llms.cohere.common_utils import CohereModelInfo
+from litellm.llms.command_code.common_utils import (
+    get_command_code_api_base,
+    get_command_code_api_format,
+    get_command_code_api_key,
+    with_command_code_zdr_header,
+)
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.llms.openai.chat.gpt_5_transformation import OpenAIGPT5Config
 from litellm.llms.openai_like.json_loader import JSONProviderRegistry
@@ -2488,6 +2494,58 @@ def _complete_opencode_go(ctx: _CompletionDispatchContext) -> _CompletionDispatc
             api_key=api_key,
             logging_obj=ctx.logging,
             headers=with_opencode_go_session_header(headers=ctx.headers, litellm_params=ctx.litellm_params),
+            timeout=ctx.timeout,
+            client=client,
+            custom_llm_provider=ctx.custom_llm_provider,
+        )
+        ctx.logging.post_call(input=ctx.messages, api_key=api_key, original_response=messages_response)
+        return messages_response
+
+    response: Final = base_llm_http_handler.completion(
+        model=ctx.model,
+        messages=ctx.messages,
+        api_base=api_base,
+        custom_llm_provider=ctx.custom_llm_provider,
+        model_response=ctx.model_response,
+        encoding=_get_encoding(),
+        logging_obj=ctx.logging,
+        optional_params=ctx.optional_params,
+        timeout=ctx.timeout,
+        litellm_params=ctx.litellm_params,
+        shared_session=ctx.shared_session,
+        acompletion=ctx.acompletion,
+        stream=ctx.stream,
+        api_key=api_key,
+        headers=ctx.headers,
+        client=client,
+        provider_config=ctx.provider_config,
+    )
+    ctx.logging.post_call(input=ctx.messages, api_key=api_key, original_response=response)
+
+    return response
+
+
+def _complete_command_code(ctx: _CompletionDispatchContext) -> _CompletionDispatchResult:
+    client: Final = _dispatch_client_http(ctx)
+    api_key: Final = get_command_code_api_key(ctx.api_key) or litellm.api_key
+    api_base: Final = get_command_code_api_base(ctx.api_base or litellm.api_base)
+
+    if get_command_code_api_format(ctx.model) == "messages":
+        messages_response: Final = anthropic_chat_completions.completion(
+            model=ctx.model,
+            messages=ctx.messages,
+            api_base=f"{api_base.removesuffix('/messages')}/messages",
+            acompletion=ctx.acompletion,
+            custom_prompt_dict=litellm.custom_prompt_dict,
+            model_response=ctx.model_response,
+            print_verbose=print_verbose,
+            optional_params=ctx.optional_params,
+            litellm_params=ctx.litellm_params,
+            logger_fn=ctx.logger_fn,
+            encoding=_get_encoding(),
+            api_key=api_key,
+            logging_obj=ctx.logging,
+            headers=with_command_code_zdr_header(ctx.headers),
             timeout=ctx.timeout,
             client=client,
             custom_llm_provider=ctx.custom_llm_provider,
@@ -5772,6 +5830,8 @@ def completion(
             response = _complete_minimax(_dispatch_ctx)
         elif custom_llm_provider == "opencode_go":
             response = _complete_opencode_go(_dispatch_ctx)  # rebind-ok: mirrors the sibling dispatch branches
+        elif custom_llm_provider == "command_code":
+            response = _complete_command_code(_dispatch_ctx)  # rebind-ok: mirrors the sibling dispatch branches
         elif custom_llm_provider == "hosted_vllm":
             response = _complete_hosted_vllm(_dispatch_ctx)
         elif (

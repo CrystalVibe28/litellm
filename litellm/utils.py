@@ -8077,6 +8077,10 @@ class ProviderConfigManager:
                 lambda model: ProviderConfigManager._get_opencode_go_chat_config(model),
                 True,
             ),
+            LlmProviders.COMMAND_CODE: (
+                lambda model: ProviderConfigManager._get_command_code_chat_config(model),
+                True,
+            ),
             LlmProviders.GITHUB: (lambda: litellm.GithubChatConfig(), False),
             LlmProviders.COMPACTIFAI: (lambda: litellm.CompactifAIChatConfig(), False),
             LlmProviders.GITHUB_COPILOT: (lambda: litellm.GithubCopilotConfig(), False),
@@ -8210,6 +8214,12 @@ class ProviderConfigManager:
         from litellm.llms.opencode_go.chat.transformation import get_opencode_go_chat_config
 
         return get_opencode_go_chat_config(model)
+
+    @staticmethod
+    def _get_command_code_chat_config(model: str) -> BaseConfig:
+        from litellm.llms.command_code.chat.transformation import get_command_code_chat_config
+
+        return get_command_code_chat_config(model)
 
     @staticmethod
     def _get_vertex_ai_config(model: str) -> BaseConfig:
@@ -8509,6 +8519,11 @@ class ProviderConfigManager:
             from litellm.llms.opencode_go.messages.transformation import OpenCodeGoMessagesConfig
 
             return OpenCodeGoMessagesConfig() if get_opencode_go_api_format(model) == "messages" else None
+        elif litellm.LlmProviders.COMMAND_CODE == provider:
+            from litellm.llms.command_code.common_utils import get_command_code_api_format
+            from litellm.llms.command_code.messages.transformation import CommandCodeMessagesConfig
+
+            return CommandCodeMessagesConfig() if get_command_code_api_format(model) == "messages" else None
         elif litellm.LlmProviders.DEEPSEEK == provider:
             from litellm.llms.deepseek.messages.transformation import (
                 DeepSeekAnthropicMessagesConfig,

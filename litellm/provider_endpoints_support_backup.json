@@ -600,6 +600,15 @@
         "interactions": true
       }
     },
+    "command_code": {
+      "display_name": "Command Code (`command_code`)",
+      "url": "https://commandcode.ai/docs/provider",
+      "endpoints": {
+        "chat_completions": true,
+        "messages": true,
+        "responses": true
+      }
+    },
     "compactifai": {
       "display_name": "CompactifAI (`compactifai`)",
       "url": "https://docs.litellm.ai/docs/providers/compactifai",

@@ -2020,6 +2020,34 @@
     "default_model_placeholder": "opencode_go/glm-5.3"
   },
   {
+    "provider": "COMMAND_CODE",
+    "provider_display_name": "Command Code",
+    "litellm_provider": "command_code",
+    "credential_fields": [
+      {
+        "key": "api_key",
+        "label": "API Key",
+        "placeholder": "your-command-code-api-key",
+        "tooltip": "Command Code API Key from https://commandcode.ai/studio",
+        "required": true,
+        "field_type": "password",
+        "options": null,
+        "default_value": null
+      },
+      {
+        "key": "api_base",
+        "label": "API Base URL",
+        "placeholder": "https://api.commandcode.ai/provider/v1",
+        "tooltip": "Defaults to https://api.commandcode.ai/provider/v1",
+        "required": false,
+        "field_type": "text",
+        "options": null,
+        "default_value": "https://api.commandcode.ai/provider/v1"
+      }
+    ],
+    "default_model_placeholder": "command_code/deepseek/deepseek-v4.1-flash"
+  },
+  {
     "provider": "MINIMAX",
     "provider_display_name": "MiniMax",
     "litellm_provider": "minimax",
