@@ -1548,6 +1548,7 @@ if TYPE_CHECKING:
     from .llms.empower.chat.transformation import EmpowerChatConfig as EmpowerChatConfig
     from .llms.minimax.chat.transformation import MinimaxChatConfig as MinimaxChatConfig
     from .llms.opencode_go.chat.transformation import OpenCodeGoChatConfig as OpenCodeGoChatConfig
+    from .llms.command_code.chat.transformation import CommandCodeChatConfig as CommandCodeChatConfig
     from .llms.aiohttp_openai.chat.transformation import (
         AiohttpOpenAIChatConfig as AiohttpOpenAIChatConfig,
     )
