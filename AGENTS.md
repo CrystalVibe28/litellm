@@ -16,8 +16,8 @@ Any request to merge, sync, pull in or update from upstream, in any wording and 
 | `litellm_<topic>` | One branch per custom feature or larger change. Kept after merging. Follow-up work on the same patch goes on the same branch and is merged again |
 | `codex/chatgpt-image-bridge` | The topic branch of patch 1. It predates the `litellm_<topic>` naming rule and keeps its name |
 | `litellm_agents_md_patch_registry` | Documentation-only branch for this file |
-| `litellm_internal_staging` | Upstream's integration branch, the merge source. There is no local branch of that name at the moment, only `origin/litellm_internal_staging`, which is stale (2026-06-01) |
-| `main` | Local mirror of `upstream/main`. Never commit to it. Only fast-forward it from `upstream` |
+| `main` | Local mirror of `upstream/main`, which it tracks, and the merge source for upstream merges. Never commit to it. Only fast-forward it from `upstream` |
+| `litellm_internal_staging` | Upstream's former default branch and the merge source up to `cd1476d14e` (2026-09-11). Upstream has deleted it. Only the stale `origin/litellm_internal_staging` (2026-06-01) remains, and there is no local branch. Do not merge from it. The main patch branch keeps the name for continuity |
 | `dogoin/v1.83.14-stable.patch.3-pr25603`, `dogoin/v1.83.14-stable.patch.3-pr25603-codex-image-bridge` | **Deprecated. Do not commit to them or branch from them.** Older patch branches on top of the release tag `v1.83.14-stable.patch.3`, superseded by the main patch branch |
 | `pr-25603` | Local copy of upstream PR #25603, the source of patch 8. Read-only |
 
@@ -30,7 +30,7 @@ New branches follow the rule in `CLAUDE.md`: prefix `litellm_`, no `/` in the na
   - Types in use: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
   - Scopes in use: `chatgpt`, `proxy`, `router`, `auth`, `opencode_go`, `command_code`, `vercel_ai_gateway`, `agents`
 - **Merge commits:**
-  - Upstream: `chore: merge upstream litellm_internal_staging`
+  - Upstream: `chore: merge upstream main`. Merges made before upstream's default branch changed used `chore: merge upstream litellm_internal_staging`
   - Custom branch: git's default subject, `Merge branch '<branch>' into crystalvibe28/litellm_internal_staging.patch`
 - **Always** create a merge commit (`--no-ff`). Never rebase, squash or fast-forward a merge into the main patch branch
 - **Author:** custom commits are authored by `CrystalVibe28`. No AI attribution lines
@@ -55,12 +55,13 @@ The work has two phases, with a stop in between whenever there are conflicts
 **Phase 1: prepare and merge**
 
 1. Check that the working tree is clean. Never overwrite, restore or delete existing changes. If there are uncommitted changes, stop and report
-2. Fetch from `upstream` and bring the local `litellm_internal_staging` up to the latest upstream commit
-   - If `upstream` has no `litellm_internal_staging` branch (check with `git ls-remote upstream refs/heads/litellm_internal_staging`), do not guess a replacement. Report it, together with upstream's default branch (`git ls-remote --symref upstream HEAD`) and whether that branch contains the reference commit of the last upstream merge, and wait for the user to name the merge source
-   - As of 2026-11-14 this is the case: upstream no longer has `litellm_internal_staging`, its default branch is `main`, and `upstream/main` contains the last merged commit `e907e5ee9b`
+2. Confirm the merge source, then update it
+   - The merge source is upstream's default branch, `main`. Verified with `gh` on 2026-11-14: the default branch of BerriAI/litellm is `main`, `litellm_internal_staging` no longer exists there (HTTP 404), and `upstream/main` contains the last merged upstream commit `e907e5ee9b`
+   - Check it again every time: `gh repo view BerriAI/litellm --json defaultBranchRef -q .defaultBranchRef.name`. If the answer is not `main`, do not guess. Report the new default branch and whether it contains the reference commit of the last upstream merge, and wait for the user to name the merge source
+   - `git fetch upstream`, then fast-forward the local `main`, which tracks `upstream/main`: `git fetch upstream main:main` from another branch, or `git merge --ff-only upstream/main` on `main`. If `main` cannot be fast-forwarded, it has local commits it should not have: stop and report
 3. Switch to the local branch that tracks `crystalvibe28/litellm_internal_staging.patch`. If the branch name or its tracking relationship is unclear, report the current branch and remote state before going further
-4. Look at the earlier upstream merge commits (`git log --first-parent --merges --grep="merge upstream"`) and reuse their message format: `chore: merge upstream litellm_internal_staging`
-5. Merge with `git merge --no-ff`. No rebase, no squash
+4. Look at the earlier upstream merge commits (`git log --first-parent --merges --grep="merge upstream"`) and reuse their message format with the current source branch: `chore: merge upstream main`
+5. Merge with `git merge --no-ff main`. No rebase, no squash
 6. If there are no conflicts, run the checks from phase 2 step 4, complete the merge commit and report
 7. If there are conflicts:
    - Leave the repository in the conflicted state. Do not resolve anything, do not create the merge commit, and do not run `git merge --abort`
@@ -130,7 +131,7 @@ Every commit made in this fork must be reflected in this file. Do this as part o
 ### How to read the line ranges
 
 - Ranges are `git blame` attributions: the lines each commit **still owns** at the reference commit. They are current locations, not the hunks at commit time, and they drift with every upstream merge
-- Patches merged into the main patch branch are measured at `crystalvibe28/litellm_internal_staging.patch @ a8b6251ee8`, against the last merged upstream commit `e907e5ee9b` (2026-09-10). Commits after `a8b6251ee8` only touch this file
+- Patches merged into the main patch branch are measured at `crystalvibe28/litellm_internal_staging.patch @ a8b6251ee8`, against the last merged upstream commit `e907e5ee9b` (2026-09-10), which is on `upstream/main`. Commits after `a8b6251ee8` only touch this file
 - Patches that are **not merged** are measured at their own branch tip, which sits on an older upstream base, so their numbers do not match the main patch branch
 - "merge `<hash>`" marks lines of the same patch that were re-resolved during an upstream merge and are now attributed to that merge commit
 - "new" marks a file that does not exist upstream
