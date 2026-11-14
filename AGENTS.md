@@ -152,11 +152,30 @@ Any request to merge, sync, pull in or update from upstream, in any wording and 
 | `codex/chatgpt-image-bridge` | The topic branch of patch 1. It predates the `litellm_<topic>` naming rule and keeps its name |
 | `litellm_agents_md_patch_registry` | Documentation-only branch for this file |
 | `main` | Local mirror of `upstream/main`, which it tracks, and the merge source for upstream merges. Never commit to it. Only fast-forward it from `upstream` |
-| `litellm_internal_staging` | Upstream's former default branch and the merge source up to `cd1476d14e` (2026-09-11). Upstream has deleted it. Only the stale `origin/litellm_internal_staging` (2026-06-01) remains, and there is no local branch. Do not merge from it. The main patch branch keeps the name for continuity |
+| `litellm_internal_staging` | Upstream's former default branch and the merge source up to `e1e4e91731` (2026-09-11). Upstream has deleted it. Only the stale `origin/litellm_internal_staging` (2026-06-01) remains, and there is no local branch. Do not merge from it. The main patch branch keeps the name for continuity |
 | `dogoin/v1.83.14-stable.patch.3-pr25603`, `dogoin/v1.83.14-stable.patch.3-pr25603-codex-image-bridge` | **Deprecated. Do not commit to them or branch from them.** Older patch branches on top of the release tag `v1.83.14-stable.patch.3`, superseded by the main patch branch |
 | `pr-25603` | Local copy of upstream PR #25603, the source of patch 8. Read-only |
 
 New branches follow the rule earlier in this file: prefix `litellm_`, no `/` in the name
+
+### History rewrite of 2026-11-15
+
+The main patch branch was rewritten from `b820fe240a` (2026-06-02) on, so that every merge commit carries git's default message. Five merge subjects changed (four upstream merges that read `chore: merge upstream ...` and one custom merge that lacked quotes). No file content, author or date changed, but the 25 commits from that point on have new hashes. The pre-rewrite tip `378566324b` is kept locally as the tag `backup-patch-branch-before-rewrite-20261115`
+
+Every hash in this file is the rewritten one. The other branches were not rewritten and still hold the old copies of the same commits:
+
+| Commit | Old hash, still on the topic branch | Hash on the main patch branch |
+| ------ | ----------------------------------- | ----------------------------- |
+| Patch 4 | `a4c0d19106` | `32ac112c48` |
+| Patch 2 | `d95fa1c143`, `9226119a6c`, `afbecb53ce`, `cc305c99c5` | `6e78a13375`, `b9b16b79c2`, `af3d97bef2`, `e4b332b8bc` |
+| Patch 5 | `f3c816c9dc` | `73939f28e7` |
+| Patch 6 | `74eba73f9a`, `86a8f2ca49` | `e2a28818f7`, `1f9cb089ac` |
+| Patch 7 | `8c6f11bdff` | `0b7c61784c` |
+| Upstream merges | `03a9fb13d9`, `90f9c09983`, `cd1476d14e`, `adaf3181f7` | `b820fe240a`, `931d4999fc`, `e1e4e91731`, `d2218378e6` |
+
+Patches 1, 3 and 8 predate the rewrite point and kept their hashes
+
+Do not merge `litellm_forward_headers_by_deployment`, `litellm_chatgpt_codex_proxy`, `litellm_opencode_go_provider`, `litellm_command_code_provider` or `litellm_agents_md_patch_registry` into the main patch branch as they are. They no longer share the rewritten commits with it, only older upstream history, so a merge would bring every old copy back as a duplicate. Before working on one of them again, move it to the rewritten equivalent of its tip, or recreate it from the main patch branch, and say so to the user first
 
 ### Commit conventions
 
@@ -165,7 +184,7 @@ New branches follow the rule earlier in this file: prefix `litellm_`, no `/` in 
   - Types in use: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
   - Scopes in use: `chatgpt`, `proxy`, `router`, `auth`, `opencode_go`, `command_code`, `vercel_ai_gateway`, `agents`
 - **Merge commits:**
-  - Upstream: `chore: merge upstream main`. Merges made before upstream's default branch changed used `chore: merge upstream litellm_internal_staging`
+  - Upstream: git's default subject, `Merge branch 'main' into crystalvibe28/litellm_internal_staging.patch`. Merges made before upstream's default branch changed read `Merge branch 'litellm_internal_staging' into crystalvibe28/litellm_internal_staging.patch`. Never replace it with a Conventional Commits subject
   - Custom branch: git's default subject, `Merge branch '<branch>' into crystalvibe28/litellm_internal_staging.patch`
 - **Always** create a merge commit (`--no-ff`). Never rebase, squash or fast-forward a merge into the main patch branch
 - **Author:** custom commits are authored by `CrystalVibe28`. No AI attribution lines
@@ -195,7 +214,7 @@ The work has two phases, with a stop in between whenever there are conflicts
    - Check it again every time: `gh repo view BerriAI/litellm --json defaultBranchRef -q .defaultBranchRef.name`. If the answer is not `main`, do not guess. Report the new default branch and whether it contains the reference commit of the last upstream merge, and wait for the user to name the merge source
    - `git fetch upstream`, then fast-forward the local `main`, which tracks `upstream/main`: `git fetch upstream main:main` from another branch, or `git merge --ff-only upstream/main` on `main`. If `main` cannot be fast-forwarded, it has local commits it should not have: stop and report
 3. Switch to the local branch that tracks `crystalvibe28/litellm_internal_staging.patch`. If the branch name or its tracking relationship is unclear, report the current branch and remote state before going further
-4. Look at the earlier upstream merge commits (`git log --first-parent --merges --grep="merge upstream"`) and reuse their message format with the current source branch: `chore: merge upstream main`
+4. Look at the earlier upstream merge commits (`git log --first-parent --merges`) and reuse their message format, which is git's default: `Merge branch 'main' into crystalvibe28/litellm_internal_staging.patch`
 5. Merge with `git merge --no-ff main`. No rebase, no squash
 6. If there are no conflicts, run the checks from phase 2 step 4, complete the merge commit and report
 7. If there are conflicts:
@@ -267,7 +286,7 @@ Every commit made in this fork must be reflected in this file. Do this as part o
 ### How to read the line ranges
 
 - Ranges are `git blame` attributions: the lines each commit **still owns** at the reference commit. They are current locations, not the hunks at commit time, and they drift with every upstream merge
-- Patches merged into the main patch branch are measured at `crystalvibe28/litellm_internal_staging.patch @ adaf3181f7`, the merge of the last merged upstream commit `ca4c6c0a6d` (2026-11-14), which is on `upstream/main`. Commits after `adaf3181f7` only touch this file
+- Patches merged into the main patch branch are measured at `crystalvibe28/litellm_internal_staging.patch @ d2218378e6`, the merge of the last merged upstream commit `ca4c6c0a6d` (2026-11-14), which is on `upstream/main`. Commits after `d2218378e6` only touch this file
 - Patches that are **not merged** are measured at their own branch tip, which sits on an older upstream base, so their numbers do not match the main patch branch
 - "merge `<hash>`" marks lines of the same patch that were re-resolved during an upstream merge and are now attributed to that merge commit
 - "new" marks a file that does not exist upstream
@@ -280,19 +299,19 @@ Every commit made in this fork must be reflected in this file. Do this as part o
 | # | Patch | Branch | In main patch branch | Commits |
 | - | ----- | ------ | -------------------- | ------- |
 | 1 | ChatGPT image edit bridge (generation superseded by upstream) | `codex/chatgpt-image-bridge` | Image edit only, without `db3eda4bb9` | `ffd11fdfa3`, `49c53492e6`, `f3a65bd26b`, `f97780a636`, `4c653a5749`, `4f42ead4ca`, `4b168229b5`, `1f84f188e7`, `e59ef32ddd`, `bc3f09f362`, `765cc80adf`, `efdc5a22cd`, `405a41d302`, `ed72e3200b`, `f61c2b2b0a`, `e9094c1907`, `db3eda4bb9` (prototype: `b817d9fe75`) |
-| 2 | ChatGPT / Codex proxy hardening | `litellm_chatgpt_codex_proxy` | Yes | `d95fa1c143`, `9226119a6c`, `afbecb53ce`, `cc305c99c5` |
+| 2 | ChatGPT / Codex proxy hardening | `litellm_chatgpt_codex_proxy` | Yes | `6e78a13375`, `b9b16b79c2`, `af3d97bef2`, `e4b332b8bc` |
 | 3 | Internal user header budgets | `litellm_openwebui_user_header_budget_investigation` | Yes | `8ad82302e3`, `6bda0f7b9e`, `16bf658dcb` |
-| 4 | Forward client headers by selected deployment | `litellm_forward_headers_by_deployment` | Yes | `a4c0d19106` |
-| 5 | Proxy startup fix for an undefined `Optional` | `crystalvibe28/litellm_internal_staging.patch` | Yes | `f3c816c9dc` |
-| 6 | OpenCode Go provider | `litellm_opencode_go_provider` | Superseded by upstream. Four behaviours ported onto upstream's provider | `74eba73f9a`, `86a8f2ca49` |
-| 7 | Command Code provider | `litellm_command_code_provider` | Yes | `8c6f11bdff` |
+| 4 | Forward client headers by selected deployment | `litellm_forward_headers_by_deployment` | Yes | `32ac112c48` |
+| 5 | Proxy startup fix for an undefined `Optional` | `crystalvibe28/litellm_internal_staging.patch` | Yes | `73939f28e7` |
+| 6 | OpenCode Go provider | `litellm_opencode_go_provider` | Superseded by upstream. Four behaviours ported onto upstream's provider | `e2a28818f7`, `1f9cb089ac` |
+| 7 | Command Code provider | `litellm_command_code_provider` | Yes | `0b7c61784c` |
 | 8 | Vercel AI Gateway `reasoning_effort` | `crystalvibe28/litellm_internal_staging.patch` (cherry-pick) | Yes | `f9d3395a0b` |
 
 ---
 
 ### 1. ChatGPT image generation and image edit bridge
 
-**Status:** partly superseded by upstream in merge `adaf3181f7`. Upstream now serves `chatgpt/` image generation itself (PR #48522), so generation follows upstream's path and the fork keeps only the image edit bridge. `db3eda4bb9`, the tip of `codex/chatgpt-image-bridge`, has never been merged, so image edits still accept only `size` and silently drop every other param, whatever `drop_params` says
+**Status:** partly superseded by upstream in merge `d2218378e6`. Upstream now serves `chatgpt/` image generation itself (PR #48522), so generation follows upstream's path and the fork keeps only the image edit bridge. `db3eda4bb9`, the tip of `codex/chatgpt-image-bridge`, has never been merged, so image edits still accept only `size` and silently drop every other param, whatever `drop_params` says
 
 **What it changes**
 
@@ -332,7 +351,7 @@ Every commit made in this fork must be reflected in this file. Do this as part o
 - `e9094c1907` (2026-05-17) `fix: preserve ChatGPT image stream error status`
 - `db3eda4bb9` (2026-05-17) `fix: align ChatGPT image edit drop params behavior` (not merged)
 
-**Files and line ranges** (at `crystalvibe28/litellm_internal_staging.patch @ adaf3181f7` unless stated)
+**Files and line ranges** (at `crystalvibe28/litellm_internal_staging.patch @ d2218378e6` unless stated)
 
 `ffd11fdfa3`
 
@@ -348,16 +367,16 @@ Every commit made in this fork must be reflected in this file. Do this as part o
 
 - `litellm/__init__.py`: 2235, 2237-2238
 - `litellm/llms/chatgpt/image_generation/__init__.py`: 1, 3 (new)
-- `litellm/llms/chatgpt/image_generation/generation_transformation.py`: 1-307 (new). The whole file belongs to this patch except 21, 24, 55-56 and 111-115, which belong to patch 2. Merge `cd1476d14e` re-resolved about 30 single lines for upstream's lint style
-- `litellm/llms/chatgpt/image_generation/response_parsing.py`: 1-276 (new), except the lines of `f61c2b2b0a` and `e9094c1907`. Merge `cd1476d14e` re-resolved about 25 single lines
+- `litellm/llms/chatgpt/image_generation/generation_transformation.py`: 1-307 (new). The whole file belongs to this patch except 21, 24, 55-56 and 111-115, which belong to patch 2. Merge `e1e4e91731` re-resolved about 30 single lines for upstream's lint style
+- `litellm/llms/chatgpt/image_generation/response_parsing.py`: 1-276 (new), except the lines of `f61c2b2b0a` and `e9094c1907`. Merge `e1e4e91731` re-resolved about 25 single lines
 - `litellm/llms/chatgpt/image_edit/__init__.py`: 1-3 (new)
-- `litellm/llms/chatgpt/image_edit/transformation.py`: 1-169 (new; merge `cd1476d14e`: 4, 32, 40, 42, 48-50, 65, 82-84, 87, 89, 121, 126, 164)
+- `litellm/llms/chatgpt/image_edit/transformation.py`: 1-169 (new; merge `e1e4e91731`: 4, 32, 40, 42, 48-50, 65, 82-84, 87, 89, 121, 126, 164)
 - `tests/unit/llms/chatgpt/chatgpt_image_test_utils.py`: 1-10 (new)
-- `tests/unit/llms/chatgpt/image_edit/__init__.py`, `tests/unit/llms/chatgpt/image_generation/__init__.py`: empty (new, added in merge `adaf3181f7`)
-- `tests/unit/llms/chatgpt/image_edit/test_transformation.py`: 1-189 (new; merge `adaf3181f7`: 11)
+- `tests/unit/llms/chatgpt/image_edit/__init__.py`, `tests/unit/llms/chatgpt/image_generation/__init__.py`: empty (new, added in merge `d2218378e6`)
+- `tests/unit/llms/chatgpt/image_edit/test_transformation.py`: 1-189 (new; merge `d2218378e6`: 11)
 - `tests/unit/llms/chatgpt/image_generation/test_request_transformation.py`: 1-383 (new), except 120, 174-179, 188, 229 and 335, which belong to patch 2
-- `tests/unit/llms/chatgpt/image_generation/test_response_parsing.py`: 1-131, 191-270 (new; merge `adaf3181f7`: 7)
-- `tests/unit/llms/chatgpt/image_generation/test_usage.py`: 1-30, 79-247 (new; merge `adaf3181f7`: 6)
+- `tests/unit/llms/chatgpt/image_generation/test_response_parsing.py`: 1-131, 191-270 (new; merge `d2218378e6`: 7)
+- `tests/unit/llms/chatgpt/image_generation/test_usage.py`: 1-30, 79-247 (new; merge `d2218378e6`: 6)
 
 `f61c2b2b0a`
 
@@ -369,7 +388,7 @@ Every commit made in this fork must be reflected in this file. Do this as part o
 - `litellm/llms/chatgpt/image_generation/response_parsing.py`: 165, 167, 169-171, 173-187, 195-198
 - `tests/unit/llms/chatgpt/image_generation/test_response_parsing.py`: 132-190
 
-Merge `adaf3181f7`
+Merge `d2218378e6`
 
 - `litellm/_lazy_imports_registry.py`: 428-432, the two entries in upstream's new `LITELLM_ATTRIBUTES` mapping
 - `litellm/utils.py`: 11357-11360, the `CHATGPT` branch of `get_provider_image_edit_config`
@@ -377,9 +396,9 @@ Merge `adaf3181f7`
 
 `49c53492e6`, `f3a65bd26b`, `f97780a636`, `4c653a5749`, `4f42ead4ca`, `4b168229b5`, `bc3f09f362`, `765cc80adf`, `efdc5a22cd`
 
-- No surviving lines. Their code was moved into the split modules by `ed72e3200b` or re-placed by merge `adaf3181f7`
+- No surviving lines. Their code was moved into the split modules by `ed72e3200b` or re-placed by merge `d2218378e6`
 
-Dropped in merge `adaf3181f7`
+Dropped in merge `d2218378e6`
 
 - The `CHATGPT` entry in the `llm_http_handler` provider list of `litellm/images/main.py`, the `CHATGPT` branch of `get_provider_image_generation_config` in `litellm/utils.py`, and `test_chatgpt_image_generation_config_registered`
 
@@ -397,20 +416,20 @@ Dropped in merge `adaf3181f7`
 - The OAuth token is only ever sent to the authenticator's base URL, never to a caller-supplied `api_base` (`4b168229b5`)
 - Usage and error parsing stay non-recursive and keep the real upstream status code
 - The `chatgpt/gpt-image-2` entry must be in both cost map files and identical in both
-- The topic branch sits on a much older upstream base than the main patch branch. Merging `db3eda4bb9` will conflict with the lint rewrites of `cd1476d14e` in `image_edit/transformation.py`. Re-apply the change on the current file instead of taking the branch's version
+- The topic branch sits on a much older upstream base than the main patch branch. Merging `db3eda4bb9` will conflict with the lint rewrites of `e1e4e91731` in `image_edit/transformation.py`. Re-apply the change on the current file instead of taking the branch's version
 
 ---
 
 ### 2. ChatGPT / Codex proxy hardening
 
-**Status:** in the main patch branch. Merge `adaf3181f7` rebuilt it on upstream's reworked `chatgpt` provider (per-deployment auth files, client-supplied OAuth credentials, implicit device-code login), raised the pinned Codex version to `0.166.0` and added a guard to the 401 retry
+**Status:** in the main patch branch. Merge `d2218378e6` rebuilt it on upstream's reworked `chatgpt` provider (per-deployment auth files, client-supplied OAuth credentials, implicit device-code login), raised the pinned Codex version to `0.166.0` and added a guard to the 401 retry
 
 **What it changes**
 
-- `d95fa1c143`: the outbound identity is a pinned Codex CLI header set, `CODEX_CLIENT_VERSION = "0.166.0"` since merge `adaf3181f7`. `merge_chatgpt_headers` in `common_utils.py` merges headers case-insensitively, normalises `session_id` / `thread_id` to `session-id` / `thread-id`, strips `Forwarded`, `Via`, `X-Forwarded-*`, `X-LiteLLM-*`, `X-Stainless-*` and `X-API-Key`, and forces the resolved `Authorization` and `ChatGPT-Account-Id`. `finalize_chatgpt_request` is the `sign_request` hook for the chat, responses and image edit configs. The shared Responses handlers validate the merged headers for the providers in `_PROVIDERS_VALIDATING_MERGED_RESPONSES_HEADERS`
-- `9226119a6c`: `normalize_chatgpt_responses_request` replaces the hardcoded Codex system prompt. Caller `instructions` are preserved, including an empty string, with the `CHATGPT_DEFAULT_INSTRUCTIONS` env var or `""` as the fallback. Fields are whitelisted (`text`, `parallel_tool_calls`, `prompt_cache_key`, `client_metadata` and upstream's `max_output_tokens` are allowed, and `service_tier` is mapped through `CHATGPT_SERVICE_TIERS`), and `stream=true`, `store=false` and `include: reasoning.encrypted_content` are always forced. Since merge `adaf3181f7` the normalisation runs in `ChatGPTResponsesAPIConfig.transform_responses_api_request` and in upstream's `transform_extra_body` hook, and upstream's own SSE aggregation serves non-streaming callers. String input is passed through as upstream does and system items become developer items
-- `afbecb53ce`: `Authenticator` refresh is guarded by an `RLock` plus a cross-process file lock (`msvcrt` or `fcntl`) with a 60 second timeout, auth file writes are atomic (temp file, `fsync`, `os.replace`), and secrets stay out of error messages. Since merge `adaf3181f7` a missing or unrefreshable login follows upstream: `get_access_token` raises early when login cannot block, otherwise it runs upstream's device-code login with its cooldown inside the fork's lock, and `_account_id` persists a derived account id under the lock after re-reading the file. `HTTPHandler` and `AsyncHTTPHandler` refresh the token and resend once on a 401 when the body is replayable and `Authenticator.issued_access_token` confirms the rejected token is the gateway's own, so a client-supplied token is never replaced by the gateway account's. The Responses streaming iterators close their connections on completion or cancel. Provider lookup for `chatgpt/` models runs in a thread because auth does blocking I/O
-- `cc305c99c5`: the image `validate_environment` forces the OAuth `Authorization` and `ChatGPT-Account-Id`, so proxy callers cannot override them. It now only serves image edits (patch 1)
+- `6e78a13375`: the outbound identity is a pinned Codex CLI header set, `CODEX_CLIENT_VERSION = "0.166.0"` since merge `d2218378e6`. `merge_chatgpt_headers` in `common_utils.py` merges headers case-insensitively, normalises `session_id` / `thread_id` to `session-id` / `thread-id`, strips `Forwarded`, `Via`, `X-Forwarded-*`, `X-LiteLLM-*`, `X-Stainless-*` and `X-API-Key`, and forces the resolved `Authorization` and `ChatGPT-Account-Id`. `finalize_chatgpt_request` is the `sign_request` hook for the chat, responses and image edit configs. The shared Responses handlers validate the merged headers for the providers in `_PROVIDERS_VALIDATING_MERGED_RESPONSES_HEADERS`
+- `b9b16b79c2`: `normalize_chatgpt_responses_request` replaces the hardcoded Codex system prompt. Caller `instructions` are preserved, including an empty string, with the `CHATGPT_DEFAULT_INSTRUCTIONS` env var or `""` as the fallback. Fields are whitelisted (`text`, `parallel_tool_calls`, `prompt_cache_key`, `client_metadata` and upstream's `max_output_tokens` are allowed, and `service_tier` is mapped through `CHATGPT_SERVICE_TIERS`), and `stream=true`, `store=false` and `include: reasoning.encrypted_content` are always forced. Since merge `d2218378e6` the normalisation runs in `ChatGPTResponsesAPIConfig.transform_responses_api_request` and in upstream's `transform_extra_body` hook, and upstream's own SSE aggregation serves non-streaming callers. String input is passed through as upstream does and system items become developer items
+- `af3d97bef2`: `Authenticator` refresh is guarded by an `RLock` plus a cross-process file lock (`msvcrt` or `fcntl`) with a 60 second timeout, auth file writes are atomic (temp file, `fsync`, `os.replace`), and secrets stay out of error messages. Since merge `d2218378e6` a missing or unrefreshable login follows upstream: `get_access_token` raises early when login cannot block, otherwise it runs upstream's device-code login with its cooldown inside the fork's lock, and `_account_id` persists a derived account id under the lock after re-reading the file. `HTTPHandler` and `AsyncHTTPHandler` refresh the token and resend once on a 401 when the body is replayable and `Authenticator.issued_access_token` confirms the rejected token is the gateway's own, so a client-supplied token is never replaced by the gateway account's. The Responses streaming iterators close their connections on completion or cancel. Provider lookup for `chatgpt/` models runs in a thread because auth does blocking I/O
+- `e4b332b8bc`: the image `validate_environment` forces the OAuth `Authorization` and `ChatGPT-Account-Id`, so proxy callers cannot override them. It now only serves image edits (patch 1)
 
 **Why**
 
@@ -423,14 +442,14 @@ Dropped in merge `adaf3181f7`
 
 **Commits**
 
-- `d95fa1c143` (2026-09-12) `fix(chatgpt): align outbound Codex identity and normalize proxy headers`
-- `9226119a6c` (2026-09-12) `fix(chatgpt): preserve proxy request semantics and aggregate non-streaming responses`
-- `afbecb53ce` (2026-09-12) `fix(chatgpt): harden OAuth refresh and streaming connection lifecycle`
-- `cc305c99c5` (2026-09-12) `fix(chatgpt): preserve OAuth identity for image proxy requests`
+- `6e78a13375` (2026-09-12) `fix(chatgpt): align outbound Codex identity and normalize proxy headers`
+- `b9b16b79c2` (2026-09-12) `fix(chatgpt): preserve proxy request semantics and aggregate non-streaming responses`
+- `af3d97bef2` (2026-09-12) `fix(chatgpt): harden OAuth refresh and streaming connection lifecycle`
+- `e4b332b8bc` (2026-09-12) `fix(chatgpt): preserve OAuth identity for image proxy requests`
 
-**Files and line ranges** (at `crystalvibe28/litellm_internal_staging.patch @ adaf3181f7`)
+**Files and line ranges** (at `crystalvibe28/litellm_internal_staging.patch @ d2218378e6`)
 
-`d95fa1c143`
+`6e78a13375`
 
 - `litellm/llms/chatgpt/README.md`: 1-2, 4-7 (new)
 - `litellm/llms/chatgpt/chat/transformation.py`: 15, 19, 27, 119-123
@@ -440,14 +459,14 @@ Dropped in merge `adaf3181f7`
 - `tests/unit/llms/chatgpt/image_generation/test_request_transformation.py`: 120, 188, 229, 335
 - `tests/unit/llms/chatgpt/responses/test_chatgpt_responses_transformation.py`: 9, 28, 113-114, 116-125, 128-134, 143-163, 165, 174-182, 189, 349
 
-`9226119a6c`
+`b9b16b79c2`
 
 - `litellm/llms/chatgpt/README.md`: 8-11
 - `litellm/llms/chatgpt/common_utils.py`: 294-299, 301, 324-338, 340-344, 349-350, 355-361
 - `litellm/llms/chatgpt/responses/transformation.py`: 40, 124
 - `tests/unit/llms/chatgpt/responses/test_chatgpt_responses_transformation.py`: 29, 42-58, 60-112, 126-127, 135-136, 138-142, 164, 166-173, 183-188, 370
 
-`afbecb53ce`
+`af3d97bef2`
 
 - `litellm/llms/chatgpt/README.md`: 12, 14-17
 - `litellm/llms/chatgpt/authenticator.py`: 3-4, 6-7, 9, 47, 91, 103-107, 109-111, 126, 153-168, 170-202, 238-239, 245-253, 255, 308, 310, 312, 319, 365, 367, 369, 400, 402, 404, 411, 440, 442, 444, 450
@@ -460,12 +479,12 @@ Dropped in merge `adaf3181f7`
 - `litellm/responses/streaming_iterator.py`: 29, 1278-1279, 1281-1283, 1285, 1287, 1340-1345, 1386, 1388, 1391-1392, 1438-1440
 - `tests/unit/llms/chatgpt/responses/test_chatgpt_responses_transformation.py`: 59, 137
 
-`cc305c99c5`
+`e4b332b8bc`
 
 - `litellm/llms/chatgpt/image_generation/generation_transformation.py`: 111-115
 - `tests/unit/llms/chatgpt/image_generation/test_request_transformation.py`: 174-179
 
-Merge `adaf3181f7`
+Merge `d2218378e6`
 
 - `litellm/llms/chatgpt/README.md`: 3, 13
 - `litellm/llms/chatgpt/authenticator.py`: 19, 90, 108, 112-125, 137-138, 140, 150-152, 169, 222-225, 296, 329, 379, 422, 459
@@ -501,7 +520,7 @@ Merge `adaf3181f7`
 
 - `8ad82302e3`: `_apply_internal_user_header_mapping_for_auth` in `user_api_key_auth.py` runs at the start of `run_centralized_common_checks` (upstream renamed it from `_run_centralized_common_checks` and kept an alias), before the user and budget lookups, so the header-mapped internal user (and not the owner of the shared key) is the identity whose budget is checked. It reuses the existing `LiteLLMProxyRequestSetup.add_internal_user_from_user_mapping`
 - `6bda0f7b9e`: admin keys (`PROXY_ADMIN`, `PROXY_ADMIN_VIEW_ONLY`) are remapped too, but only on LLM routes. The helper returns whether the `user_id` changed, and when it did, the forced admin `user_object` shortcut is skipped so the mapped user's budget applies
-- `16bf658dcb`: the resolved `end_user_id` is written onto the auth object, and that object is passed to the auth exception handler, so budget-exceeded errors and failure hooks keep the mapped user context. Since merge `adaf3181f7` the write-back happens when the key has an end-user budget, which is upstream's condition, or when the header mapping was applied
+- `16bf658dcb`: the resolved `end_user_id` is written onto the auth object, and that object is passed to the auth exception handler, so budget-exceeded errors and failure hooks keep the mapped user context. Since merge `d2218378e6` the write-back happens when the key has an end-user budget, which is upstream's condition, or when the header mapping was applied
 
 **Why**
 
@@ -515,11 +534,11 @@ Merge `adaf3181f7`
 - `6bda0f7b9e` (2026-06-02) `fix(proxy): enforce mapped internal user budgets for admin keys`
 - `16bf658dcb` (2026-06-02) `fix(proxy): preserve mapped user context in budget errors`
 
-**Files and line ranges** (at `crystalvibe28/litellm_internal_staging.patch @ adaf3181f7`)
+**Files and line ranges** (at `crystalvibe28/litellm_internal_staging.patch @ d2218378e6`)
 
 `8ad82302e3`
 
-- `litellm/proxy/auth/user_api_key_auth.py`: 3971-3973, 3975-3976, 4371-4373, 4377-4379, 4384-4387, 4389, 4391-4392 (merge `90f9c09983`: 4161, 4390; merge `cd1476d14e`: 3970, 4383; merge `adaf3181f7`: 3995, 4388; line 4374 belongs to patch 5)
+- `litellm/proxy/auth/user_api_key_auth.py`: 3971-3973, 3975-3976, 4371-4373, 4377-4379, 4384-4387, 4389, 4391-4392 (merge `931d4999fc`: 4161, 4390; merge `e1e4e91731`: 3970, 4383; merge `d2218378e6`: 3995, 4388; line 4374 belongs to patch 5)
 
 `6bda0f7b9e`
 
@@ -527,13 +546,13 @@ Merge `adaf3181f7`
 
 `16bf658dcb`
 
-- `tests/unit/proxy/auth/test_auth_exception_handler.py`: 457-481, 483-490, 492-494, 497-499, 501-502, 536, 538 (merge `90f9c09983`: 482, 491, 495-496, 500)
-- `litellm/proxy/auth/user_api_key_auth.py`: no surviving lines of its own. The write-back is line 3995, attributed to merge `adaf3181f7`
+- `tests/unit/proxy/auth/test_auth_exception_handler.py`: 457-481, 483-490, 492-494, 497-499, 501-502, 536, 538 (merge `931d4999fc`: 482, 491, 495-496, 500)
+- `litellm/proxy/auth/user_api_key_auth.py`: no surviving lines of its own. The write-back is line 3995, attributed to merge `d2218378e6`
 - `litellm/proxy/auth/auth_exception_handler.py`: no surviving lines. The optional `user_api_key_auth_obj` parameter this commit added is now identical to upstream
 
 All three commits
 
-- `tests/unit/proxy/auth/test_user_api_key_auth_request_flow.py`: 5053-5376, attributed to merge `adaf3181f7`, which moved the patch's five tests into the file upstream split out of `test_user_api_key_auth.py`
+- `tests/unit/proxy/auth/test_user_api_key_auth_request_flow.py`: 5053-5376, attributed to merge `d2218378e6`, which moved the patch's five tests into the file upstream split out of `test_user_api_key_auth.py`
 
 **Merge notes**
 
@@ -551,7 +570,7 @@ All three commits
 **What it changes**
 
 - Pre-call (`litellm_pre_call_utils.py`) stores a frozen `ModelGroupHeaderForwarding` (allowed models, filtered client headers, team id) under `MODEL_GROUP_HEADERS_KEY` in the request data, instead of deciding on the spot
-- The router replaces it with a copy carrying `deployment_model_name` once a deployment is selected. Since merge `adaf3181f7` `litellm/router.py` is upstream's thin facade and the stamping lives in `update_kwargs_with_deployment` (`litellm/router_rust/invoke/shaping.py`) and in `alist_batches` (`litellm/router_rust/invoke/endpoints.py`)
+- The router replaces it with a copy carrying `deployment_model_name` once a deployment is selected. Since merge `d2218378e6` `litellm/router.py` is upstream's thin facade and the stamping lives in `update_kwargs_with_deployment` (`litellm/router_rust/invoke/shaping.py`) and in `alist_batches` (`litellm/router_rust/invoke/endpoints.py`)
 - The sync and async `client()` wrappers in `litellm/utils.py` call `apply_model_group_headers` (`get_provider_specific_headers.py`). It re-runs the proxy's `_check_model_access_helper` (wildcard and access group matching) against the selected model, merges the forwarded headers case-insensitively on a match, and removes the internal key
 - `MODEL_GROUP_HEADERS_KEY` is added to `_UNTRUSTED_ROOT_CONTROL_FIELDS` and `_TRANSPORT_ONLY_CREDENTIAL_KEYS`, so clients cannot spoof it and it is never logged
 
@@ -563,19 +582,19 @@ All three commits
 
 **Commits**
 
-- `a4c0d19106` (2026-09-12) `fix(router): forward client headers based on the selected deployment model`
+- `32ac112c48` (2026-09-12) `fix(router): forward client headers based on the selected deployment model`
 
-**Files and line ranges** (at `crystalvibe28/litellm_internal_staging.patch @ adaf3181f7`)
+**Files and line ranges** (at `crystalvibe28/litellm_internal_staging.patch @ d2218378e6`)
 
-`a4c0d19106`
+`32ac112c48`
 
 - `litellm/litellm_core_utils/get_provider_specific_headers.py`: 2-3, 13-66
 - `litellm/proxy/litellm_pre_call_utils.py`: 65-68, 129-131, 442, 1905-1921
 - `litellm/utils.py`: 122, 2132-2134, 2414-2416
-- `tests/unit/litellm_core_utils/test_provider_specific_headers.py`: 1-3, 6, 8-9, 11, 14-17, 20-25, 27-198 (merge `adaf3181f7`: 18-19, 26)
+- `tests/unit/litellm_core_utils/test_provider_specific_headers.py`: 1-3, 6, 8-9, 11, 14-17, 20-25, 27-198 (merge `d2218378e6`: 18-19, 26)
 - `tests/unit/proxy/test_litellm_pre_call_utils.py`: 10157-10190
 
-Merge `adaf3181f7`
+Merge `d2218378e6`
 
 - `litellm/router_rust/invoke/shaping.py`: 34, 429-431
 - `litellm/router_rust/invoke/endpoints.py`: 33, 2304-2310, 2312-2314
@@ -606,11 +625,11 @@ Merge `adaf3181f7`
 
 **Commits**
 
-- `f3c816c9dc` (2026-09-13) `fix(auth): resolve undefined Optional annotation blocking proxy startup`
+- `73939f28e7` (2026-09-13) `fix(auth): resolve undefined Optional annotation blocking proxy startup`
 
-**Files and line ranges** (at `crystalvibe28/litellm_internal_staging.patch @ adaf3181f7`)
+**Files and line ranges** (at `crystalvibe28/litellm_internal_staging.patch @ d2218378e6`)
 
-`f3c816c9dc`
+`73939f28e7`
 
 - `litellm/proxy/auth/user_api_key_auth.py`: 4374
 
@@ -622,7 +641,7 @@ Merge `adaf3181f7`
 
 ### 6. OpenCode Go provider
 
-**Status:** superseded by upstream in merge `adaf3181f7`. Upstream now ships its own `opencode_go` provider under `litellm/llms/opencode/`, so the fork's `litellm/llms/opencode_go/` package, its registrations, its tests and its cost map entries were dropped. Four behaviours that upstream lacks were ported onto upstream's implementation and are what remains of this patch
+**Status:** superseded by upstream in merge `d2218378e6`. Upstream now ships its own `opencode_go` provider under `litellm/llms/opencode/`, so the fork's `litellm/llms/opencode_go/` package, its registrations, its tests and its cost map entries were dropped. Four behaviours that upstream lacks were ported onto upstream's implementation and are what remains of this patch
 
 **What it changes**
 
@@ -641,24 +660,24 @@ Merge `adaf3181f7`
 
 - Upstream had no OpenCode Go provider when the patch was written
 - `x-opencode-session` is mandatory in practice: requests without it are rejected, whatever the official documentation says. Checked again on 2026-11-14: both the `inference/go/openai/v1` and the `zen/go/v1` endpoint answer 400 `MissingSessionID` without it
-- `86a8f2ca49` came out of live testing. Some backends silently drop system prompts sent as content arrays and `reasoning_effort` was being rejected
+- `1f9cb089ac` came out of live testing. Some backends silently drop system prompts sent as content arrays and `reasoning_effort` was being rejected
 - The ported behaviours could not be confirmed with a successful live completion on 2026-11-14 because the available API key had expired
 
-**Branch:** `litellm_opencode_go_provider`. The port was done in merge `adaf3181f7` on the main patch branch. Do not merge this branch again
+**Branch:** `litellm_opencode_go_provider`. The port was done in merge `d2218378e6` on the main patch branch. Do not merge this branch again
 
 **Commits**
 
-- `74eba73f9a` (2026-10-09) `feat(opencode_go): add OpenCode Go provider`
-- `86a8f2ca49` (2026-10-12) `fix(opencode_go): keep system prompts, reasoning_effort and Claude thinking working`
+- `e2a28818f7` (2026-10-09) `feat(opencode_go): add OpenCode Go provider`
+- `1f9cb089ac` (2026-10-12) `fix(opencode_go): keep system prompts, reasoning_effort and Claude thinking working`
 
-**Files and line ranges** (at `crystalvibe28/litellm_internal_staging.patch @ adaf3181f7`)
+**Files and line ranges** (at `crystalvibe28/litellm_internal_staging.patch @ d2218378e6`)
 
-`74eba73f9a`
+`e2a28818f7`
 
 - `litellm/proxy/litellm_pre_call_utils.py`: 4673, 4697-4700
 - `litellm/responses/main.py`: 43, 1663-1673
 
-Merge `adaf3181f7`
+Merge `d2218378e6`
 
 - `litellm/llms/opencode/common_utils.py`: 4, 14-15, 71, 74, 76-81
 - `litellm/llms/opencode/chat/transformation.py`: 1-10, 37-47, 92-127
@@ -666,9 +685,9 @@ Merge `adaf3181f7`
 - `litellm/proxy/litellm_pre_call_utils.py`: 348, 4723-4725
 - `tests/unit/llms/opencode/chat/test_transformation.py`: 15, 20, 140-233
 
-`86a8f2ca49`
+`1f9cb089ac`
 
-- No surviving lines. Its message flattening and `reasoning_effort` support were re-written on upstream's config by merge `adaf3181f7`
+- No surviving lines. Its message flattening and `reasoning_effort` support were re-written on upstream's config by merge `d2218378e6`
 
 **Merge notes**
 
@@ -700,20 +719,20 @@ Merge `adaf3181f7`
 
 **Commits**
 
-- `8c6f11bdff` (2026-10-12) `feat(command_code): add Command Code provider`
+- `0b7c61784c` (2026-10-12) `feat(command_code): add Command Code provider`
 
-**Files and line ranges** (at `crystalvibe28/litellm_internal_staging.patch @ adaf3181f7`)
+**Files and line ranges** (at `crystalvibe28/litellm_internal_staging.patch @ d2218378e6`)
 
-`8c6f11bdff`
+`0b7c61784c`
 
 - `litellm/llms/command_code/__init__.py`, `chat/__init__.py`, `messages/__init__.py`: empty (new)
 - `litellm/llms/command_code/common_utils.py`: 1-38 (new)
 - `litellm/llms/command_code/chat/transformation.py`: 1-75 (new)
-- `litellm/llms/command_code/messages/transformation.py`: 1-49 (new; merge `adaf3181f7`: 3, the import of upstream's moved `anthropic.messages.native.transformation`)
+- `litellm/llms/command_code/messages/transformation.py`: 1-49 (new; merge `d2218378e6`: 3, the import of upstream's moved `anthropic.messages.native.transformation`)
 - `litellm/__init__.py`: 1663
 - `litellm/constants.py`: 818, 1071
 - `litellm/litellm_core_utils/get_llm_provider_logic.py`: 399-401, 828-832
-- `litellm/main.py`: 158-163, 2744-2795, 6607-6608. Blame credits 2745-2795 to `74eba73f9a` and merge `adaf3181f7` because `_complete_command_code` mirrors the removed OpenCode Go function
+- `litellm/main.py`: 158-163, 2744-2795, 6607-6608. Blame credits 2745-2795 to `e2a28818f7` and merge `d2218378e6` because `_complete_command_code` mirrors the removed OpenCode Go function
 - `litellm/types/utils.py`: 4807
 - `litellm/utils.py`: 9799-9802, 9945-9950, 10374-10378
 - `provider_endpoints_support.json`: 1012-1020
@@ -723,7 +742,7 @@ Merge `adaf3181f7`
 - `tests/unit/llms/command_code/__init__.py`: empty (new)
 - `tests/unit/llms/command_code/test_command_code.py`: 1-253 (new)
 
-Merge `adaf3181f7`
+Merge `d2218378e6`
 
 - `litellm/_lazy_imports_registry.py`: 433
 
@@ -758,11 +777,11 @@ Merge `adaf3181f7`
 
 - `f9d3395a0b` (2026-04-12) `feat(vercel_ai_gateway): convert reasoning_effort to Vercel AI Gateway extra_body format` (external author, committed by `CrystalVibe28`)
 
-**Files and line ranges** (at `crystalvibe28/litellm_internal_staging.patch @ adaf3181f7`)
+**Files and line ranges** (at `crystalvibe28/litellm_internal_staging.patch @ d2218378e6`)
 
 `f9d3395a0b`
 
-- `litellm/llms/vercel_ai_gateway/chat/transformation.py`: 42-43, 69, 77-79 (merge `cd1476d14e`: 70, 76)
+- `litellm/llms/vercel_ai_gateway/chat/transformation.py`: 42-43, 69, 77-79 (merge `e1e4e91731`: 70, 76)
 - `tests/unit/llms/vercel_ai_gateway/chat/test_vercel_ai_gateway_transformation.py`: 101-149
 
 **Merge notes**
