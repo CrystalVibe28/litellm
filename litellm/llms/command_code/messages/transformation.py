@@ -1,8 +1,6 @@
 from typing import Any  # noqa: TID251  # override below must mirror the legacy base signature
 
-from litellm.llms.anthropic.experimental_pass_through.messages.transformation import (
-    AnthropicMessagesConfig,
-)
+from litellm.llms.anthropic.messages.native.transformation import AnthropicMessagesConfig
 from litellm.llms.command_code.common_utils import (
     get_command_code_api_base,
     get_command_code_api_key,
